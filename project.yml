@@ -1,0 +1,45 @@
+# XcodeGen spec — the .xcodeproj is generated, not committed.
+# Regenerate after adding/removing files: `xcodegen generate`
+name: LnReader
+options:
+  bundleIdPrefix: com.vibetuned
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  LnReaderCore:
+    path: LnReaderCore
+
+targets:
+  LnReader:
+    type: application
+    platform: iOS
+    sources:
+      - LnReader
+    dependencies:
+      - package: LnReaderCore
+    info:
+      path: LnReader/Info.plist
+      properties:
+        CFBundleDisplayName: ln-reader
+        UIBackgroundModes: [audio]
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vibetuned.lnreader
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        # Set your team in Xcode (Signing & Capabilities) or uncomment:
+        # DEVELOPMENT_TEAM: XXXXXXXXXX
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.1.0
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
