@@ -43,3 +43,16 @@ targets:
         MARKETING_VERSION: 0.1.0
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+
+schemes:
+  LnReader:
+    build:
+      targets:
+        LnReader: all
+    run:
+      config: Debug
+      # DEBUG dev hook — tick one of these in Edit Scheme > Run > Arguments to
+      # import a test book on launch (simulator reads host paths directly).
+      commandLineArguments:
+        '-autoImport "/Users/osf/Documents/books/toaru/A Certain Magical Index - Volume 03.m4b"': false
+        '-autoImport "/Users/osf/Documents/books/ascendance/Ascendance of a Bookworm - Part 5 Avatar of a Goddess v12.m4b"': false

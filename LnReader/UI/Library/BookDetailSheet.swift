@@ -8,6 +8,8 @@ struct BookDetailSheet: View {
     let model: LibraryViewModel
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(PlayerEngine.self) private var engine
+    @Environment(AppNavigation.self) private var navigation
     @State private var confirmingRemove = false
 
     var body: some View {
@@ -39,6 +41,16 @@ struct BookDetailSheet: View {
                 }
 
                 Section {
+                    Button {
+                        Task { await engine.open(bookId: item.book.id, autoPlay: true) }
+                        navigation.selectedTab = .player
+                        dismiss()
+                    } label: {
+                        Label("Open", systemImage: "play.fill")
+                    }
+                }
+
+                Section {
                     Button(role: .destructive) {
                         confirmingRemove = true
                     } label: {
@@ -61,6 +73,7 @@ struct BookDetailSheet: View {
             ) {
                 Button("Remove", role: .destructive) {
                     Task {
+                        engine.unload(bookId: item.book.id)
                         await model.delete(bookId: item.book.id)
                         dismiss()
                     }

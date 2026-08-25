@@ -27,6 +27,8 @@ struct LibraryScreen: View {
 
 private struct LibraryContent: View {
     @Bindable var model: LibraryViewModel
+    @Environment(PlayerEngine.self) private var engine
+    @Environment(AppNavigation.self) private var navigation
     @State private var showImporter = false
     @State private var selectedBook: BookListItem?
 
@@ -90,12 +92,37 @@ private struct LibraryContent: View {
         .task { await model.observe() }
     }
 
+    private func play(_ item: BookListItem) {
+        Task { await engine.open(bookId: item.book.id, autoPlay: true) }
+        navigation.selectedTab = .player
+    }
+
     private var grid: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 130, maximum: 190), spacing: 16)], spacing: 20) {
                 ForEach(model.sortedItems) { item in
                     BookGridCell(item: item, coverURL: model.coverURL(for: item))
-                        .onTapGesture { selectedBook = item }
+                        .onTapGesture { play(item) }
+                        .contextMenu {
+                            Button {
+                                play(item)
+                            } label: {
+                                Label("Open", systemImage: "play.fill")
+                            }
+                            Button {
+                                selectedBook = item
+                            } label: {
+                                Label("Details", systemImage: "info.circle")
+                            }
+                            Button(role: .destructive) {
+                                Task {
+                                    engine.unload(bookId: item.book.id)
+                                    await model.delete(bookId: item.book.id)
+                                }
+                            } label: {
+                                Label("Remove from library", systemImage: "trash")
+                            }
+                        }
                 }
             }
             .padding(.horizontal)
@@ -145,14 +172,17 @@ private struct BookGridCell: View {
 
 struct CoverImage: View {
     let url: URL?
-    @State private var image: UIImage?
+    var image: UIImage? = nil // preloaded, skips disk loading
+    @State private var loaded: UIImage?
+
+    private var displayed: UIImage? { image ?? loaded }
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 10)
                 .fill(.quaternary)
-            if let image {
-                Image(uiImage: image)
+            if let displayed {
+                Image(uiImage: displayed)
                     .resizable()
                     .scaledToFill()
             } else {
@@ -162,11 +192,10 @@ struct CoverImage: View {
             }
         }
         .task(id: url) {
-            guard let url else { return }
-            let loaded = await Task.detached(priority: .utility) {
+            guard image == nil, let url else { return }
+            loaded = await Task.detached(priority: .utility) {
                 UIImage(contentsOfFile: url.path)
             }.value
-            image = loaded
         }
     }
 }

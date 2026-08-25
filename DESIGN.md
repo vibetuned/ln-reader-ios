@@ -83,6 +83,29 @@ Dev hook (DEBUG builds): `xcrun simctl launch booted com.vibetuned.lnreader
 -autoImport <host path>` imports a book without driving the file picker — the
 simulator can read host paths. Handy for smoke tests with real books.
 
+## Player
+
+`PlayerEngine` (app target) is the iOS analog of Android's PlaybackService +
+PlayerHolder pair, collapsed into one `@MainActor @Observable` class — iOS
+needs no service boundary: the `audio` background mode plus an active
+`AVAudioSession` (`.playback` / `.spokenAudio`) keeps playback alive.
+
+- `AVPlayer` with `audioTimePitchAlgorithm = .timeDomain` (speech-optimized
+  pitch preservation for the 0.5–3× presets).
+- Chapter math (`ChapterLocator`, in LnReaderCore, tested) is shared by the
+  scrubber, chapter list, chapter skips, and now-playing info. The scrubber is
+  chapter-relative; the whole-book strip + time-left sit between its labels.
+- Lock screen / Control Center: `MPRemoteCommandCenter` (play/pause, ±10/30 s
+  skips, scrub, rate) + `MPNowPlayingInfoCenter` (cover artwork, current
+  chapter as album title).
+- Position saves every 5 s while playing, on pause, and on book switch;
+  resume-on-launch reopens the last-played book paused (restarts from 0 when
+  the saved position is within 5 s of the end — the finished-book guard).
+- Interruption handling (calls, other audio) pauses and auto-resumes when the
+  system says `.shouldResume`.
+- The mini-player reads the same engine directly (no separate state holder,
+  like Android's controller-reading MiniPlayer).
+
 ## Signing / distribution
 
 - Automatic signing; team is selected in Xcode (or `DEVELOPMENT_TEAM` in

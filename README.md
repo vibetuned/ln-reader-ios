@@ -50,6 +50,11 @@ swift run M4bDump <file.m4b>  # dump parsed metadata/chapters of a real m4b
       companion attach/detach), relative-path `FileStore`
 - [x] Library — cover grid with progress bars, sort, `.m4b` file import with
       phase progress, detail sheet with remove
+- [x] Player — AVPlayer with pitch-preserving speed (0.5–3×), background-audio
+      session, lock-screen/Control-Center commands + now-playing metadata,
+      chapter-relative scrubber with whole-book strip, chapter list, ±10/30 s
+      and chapter skips, 5 s position auto-save, resume-on-launch (paused),
+      mini-player on non-player tabs
 - [ ] Collections
 - [ ] Player (AVFoundation, background audio, lock-screen controls)
 - [ ] Sleep timer

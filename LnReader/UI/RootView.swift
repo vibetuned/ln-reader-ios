@@ -1,35 +1,39 @@
 import SwiftUI
 
 /// Top-level tab layout, mirroring the Android app's bottom navigation:
-/// Library, Player, Images, Timer, Settings.
+/// Library, Player, Images, Timer, Settings. A mini-player floats over every
+/// tab except the full player while a book is loaded.
 struct RootView: View {
-    enum Tab: Hashable {
-        case library, player, images, timer, settings
-    }
-
-    @State private var selection: Tab = .library
+    @Environment(AppNavigation.self) private var navigation
+    @Environment(PlayerEngine.self) private var engine
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        TabView(selection: $selection) {
+        @Bindable var navigation = navigation
+        TabView(selection: $navigation.selectedTab) {
             LibraryScreen()
                 .tabItem { Label("Library", systemImage: "books.vertical") }
-                .tag(Tab.library)
+                .tag(RootTab.library)
             PlayerScreen()
                 .tabItem { Label("Player", systemImage: "play.circle") }
-                .tag(Tab.player)
+                .tag(RootTab.player)
             ViewerScreen()
                 .tabItem { Label("Images", systemImage: "photo.on.rectangle") }
-                .tag(Tab.images)
+                .tag(RootTab.images)
             TimerScreen()
                 .tabItem { Label("Timer", systemImage: "moon.zzz") }
-                .tag(Tab.timer)
+                .tag(RootTab.timer)
             SettingsScreen()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
-                .tag(Tab.settings)
+                .tag(RootTab.settings)
+        }
+        .overlay(alignment: .bottom) {
+            if engine.book != nil, navigation.selectedTab != .player {
+                MiniPlayer()
+                    .padding(.horizontal, 12)
+                    // iPhone's tab bar sits at the bottom; iPad's sits at the top.
+                    .padding(.bottom, horizontalSizeClass == .compact ? 72 : 8)
+            }
         }
     }
-}
-
-#Preview {
-    RootView()
 }
