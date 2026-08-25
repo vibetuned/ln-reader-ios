@@ -161,6 +161,18 @@ manual sort is not ported yet.
   the same ordinal render as tappable dots above the player scrubber at their
   chapter-local fraction, opening the full-screen image viewer — m4b-backed
   by spec, as on Android.
+- The reader injects `-apple-system` (San Francisco) as the body font —
+  WebKit defaults to Times when the EPUB doesn't specify one.
+
+## Sort & speed persistence
+
+- Playback speed persists app-wide (`player.rate` in UserDefaults), applied
+  on engine init via `AVPlayer.defaultRate`.
+- Per-collection **Manual** sort mirrors Android: a mode flag + arranged id
+  order in UserDefaults (`library.collection.<id>.manual` / `.order`), no DB
+  migration. Picking Manual seeds the order from the current on-screen order
+  and opens a drag-to-reorder sheet (`List.onMove`, saves as rows move);
+  books added later append at the end in import order.
 
 ## Signing / distribution
 

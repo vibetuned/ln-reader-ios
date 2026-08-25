@@ -45,6 +45,10 @@ final class PlayerEngine {
         self.bookRepository = bookRepository
         self.positionRepository = positionRepository
         self.fileStore = fileStore
+        // Speed is persisted app-wide across launches.
+        let storedRate = UserDefaults.standard.double(forKey: "player.rate")
+        if storedRate > 0 { rate = storedRate }
+        if #available(iOS 16.0, *) { player.defaultRate = Float(rate) }
         configureAudioSession()
         configureRemoteCommands()
         installTimeObserver()
@@ -178,6 +182,7 @@ final class PlayerEngine {
 
     func setRate(_ newRate: Double) {
         rate = newRate
+        UserDefaults.standard.set(newRate, forKey: "player.rate")
         if isPlaying { player.rate = Float(newRate) }
         if #available(iOS 16.0, *) { player.defaultRate = Float(newRate) }
         updateNowPlaying()

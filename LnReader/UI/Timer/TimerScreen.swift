@@ -1,6 +1,17 @@
 import SwiftUI
 
 struct TimerScreen: View {
+    var body: some View {
+        NavigationStack {
+            TimerControls()
+                .navigationTitle("Sleep Timer")
+        }
+    }
+}
+
+/// Timer setup / countdown / expired states — shared by the Timer tab and the
+/// player's timer drawer (mirrors Android's TimerControls reuse).
+struct TimerControls: View {
     @Environment(SleepTimerController.self) private var timer
     @Environment(PlayerEngine.self) private var engine
 
@@ -14,17 +25,14 @@ struct TimerScreen: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let state = timer.state {
-                    runningView(state)
-                } else if timer.expiredConfig != nil {
-                    expiredView
-                } else {
-                    setupForm
-                }
+        Group {
+            if let state = timer.state {
+                runningView(state)
+            } else if timer.expiredConfig != nil {
+                expiredView
+            } else {
+                setupForm
             }
-            .navigationTitle("Sleep Timer")
         }
     }
 

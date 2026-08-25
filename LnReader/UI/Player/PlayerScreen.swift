@@ -4,6 +4,7 @@ import LnReaderCore
 struct PlayerScreen: View {
     @Environment(PlayerEngine.self) private var engine
     @Environment(AppNavigation.self) private var navigation
+    @State private var showTimerSheet = false
 
     var body: some View {
         NavigationStack {
@@ -23,6 +24,13 @@ struct PlayerScreen: View {
             .toolbar {
                 if let book = engine.book {
                     ToolbarItemGroup(placement: .topBarTrailing) {
+                        speedMenu
+                        Button {
+                            showTimerSheet = true
+                        } label: {
+                            Image(systemName: "moon.zzz")
+                        }
+                        .accessibilityLabel("Sleep timer")
                         if book.epubPath != nil {
                             Button {
                                 navigation.showReader(bookId: book.id)
@@ -39,7 +47,37 @@ struct PlayerScreen: View {
                     }
                 }
             }
+            .sheet(isPresented: $showTimerSheet) {
+                NavigationStack {
+                    TimerControls()
+                        .navigationTitle("Sleep Timer")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Done") { showTimerSheet = false }
+                            }
+                        }
+                }
+                .presentationDetents([.medium, .large])
+            }
         }
+    }
+
+    private var speedMenu: some View {
+        Menu {
+            Picker("Speed", selection: Binding(
+                get: { engine.rate },
+                set: { engine.setRate($0) }
+            )) {
+                ForEach(PlayerEngine.speedPresets, id: \.self) { preset in
+                    Text("\(preset.formatted(.number.precision(.fractionLength(0...2))))×").tag(preset)
+                }
+            }
+        } label: {
+            Text("\(engine.rate.formatted(.number.precision(.fractionLength(0...2))))×")
+                .font(.subheadline.monospacedDigit())
+        }
+        .accessibilityLabel("Playback speed")
     }
 }
 
@@ -100,10 +138,7 @@ private struct PlayerContent: View {
 
                 transport
 
-                Spacer(minLength: 8)
-
-                bottomBar
-                    .padding(.bottom, 12)
+                Spacer(minLength: 16)
             }
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
@@ -264,24 +299,6 @@ private struct PlayerContent: View {
         }
     }
 
-    private var bottomBar: some View {
-        HStack {
-            Menu {
-                Picker("Speed", selection: Binding(
-                    get: { engine.rate },
-                    set: { engine.setRate($0) }
-                )) {
-                    ForEach(PlayerEngine.speedPresets, id: \.self) { preset in
-                        Text(formatRate(preset)).tag(preset)
-                    }
-                }
-            } label: {
-                Label(formatRate(engine.rate), systemImage: "gauge.with.needle")
-                    .font(.subheadline)
-            }
-        }
-    }
-
     private func formatMs(_ ms: Int64) -> String {
         let seconds = ms / 1000
         if seconds >= 3600 {
@@ -293,9 +310,5 @@ private struct PlayerContent: View {
     private func formatRemaining(_ ms: Int64) -> String {
         let minutes = ms / 60_000
         return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(minutes) min"
-    }
-
-    private func formatRate(_ value: Double) -> String {
-        "\(value.formatted(.number.precision(.fractionLength(0...2))))×"
     }
 }

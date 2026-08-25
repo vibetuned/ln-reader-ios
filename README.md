@@ -67,5 +67,7 @@ swift run M4bDump <file.m4b>  # dump parsed metadata/chapters of a real m4b
 - [x] EPUB reader — custom zip extractor + OPF spine parser (LnReaderCore),
       WKWebView reader with manual paging, light/dark + text size, audio-synced
       beat highlighting with auto-follow + Resume, scrubber image markers
-- [ ] Playback speed persistence, per-collection manual sort (Android parity
-      gaps)
+- [x] Playback speed persisted across launches; per-collection manual sort
+      with a drag-to-reorder sheet
+- [x] Sleep-timer drawer + speed control in the player top bar
+- [ ] App Store housekeeping (icon variants, privacy manifest, listing)

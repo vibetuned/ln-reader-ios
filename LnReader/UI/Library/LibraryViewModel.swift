@@ -7,6 +7,14 @@ enum LibrarySortField: String, CaseIterable {
     case dateAdded
 }
 
+/// What the sort menu offers: the two global fields, plus Manual inside a
+/// collection (a per-collection hand-arranged order, like Android).
+enum LibrarySortChoice: Hashable {
+    case name
+    case dateAdded
+    case manual
+}
+
 /// Backs both the top-level library (collectionId == nil: collections first,
 /// then loose books) and a single collection's view — mirroring Android's
 /// reused LibraryScreen.
@@ -26,17 +34,45 @@ final class LibraryViewModel {
     private(set) var importPhase: ImportPhase?
     var importErrorMessage: String?
 
-    // Sort is persisted app-wide, like Android's LibraryPreferences.
+    // Sort field/direction are persisted app-wide, like Android's
+    // LibraryPreferences; manual mode + arranged order are per-collection.
     var sortField: LibrarySortField {
         didSet { defaults.set(sortField.rawValue, forKey: "library.sortField") }
     }
     var sortAscending: Bool {
         didSet { defaults.set(sortAscending, forKey: "library.sortAscending") }
     }
+    private(set) var manualMode: Bool
+    private var manualOrder: [String]
+
+    var sortChoice: LibrarySortChoice {
+        get {
+            manualMode && collectionId != nil ? .manual : (sortField == .name ? .name : .dateAdded)
+        }
+        set {
+            switch newValue {
+            case .name:
+                setManualMode(false)
+                sortField = .name
+            case .dateAdded:
+                setManualMode(false)
+                sortField = .dateAdded
+            case .manual:
+                guard collectionId != nil else { return }
+                // Seed the arranged order from the current on-screen order.
+                if manualOrder.isEmpty { manualOrder = sortedItems.map(\.id) }
+                setManualMode(true)
+                persistManualOrder()
+            }
+        }
+    }
 
     /// Books scoped to this view (loose books at top level, members inside a collection).
     var sortedItems: [BookListItem] {
         let scoped = allItems.filter { $0.book.collectionId == collectionId }
+        if manualMode, collectionId != nil {
+            return applyManualOrder(to: scoped)
+        }
         let sorted: [BookListItem]
         switch sortField {
         case .name:
@@ -47,6 +83,41 @@ final class LibraryViewModel {
             sorted = scoped.sorted { $0.book.importedAt < $1.book.importedAt }
         }
         return sortAscending ? sorted : sorted.reversed()
+    }
+
+    /// Reorders from the reorder sheet's drag; offsets are in sortedItems space.
+    func moveManualItems(fromOffsets source: IndexSet, toOffset destination: Int) {
+        var ids = sortedItems.map(\.id)
+        ids.move(fromOffsets: source, toOffset: destination)
+        manualOrder = ids
+        persistManualOrder()
+    }
+
+    private func applyManualOrder(to items: [BookListItem]) -> [BookListItem] {
+        let position = Dictionary(
+            uniqueKeysWithValues: manualOrder.enumerated().map { ($1, $0) })
+        // Books added after the arrangement (not in the stored order) go last,
+        // keeping their import order among themselves.
+        return items
+            .sorted { $0.book.importedAt < $1.book.importedAt }
+            .enumerated()
+            .sorted { lhs, rhs in
+                let l = position[lhs.element.id] ?? manualOrder.count + lhs.offset
+                let r = position[rhs.element.id] ?? manualOrder.count + rhs.offset
+                return l < r
+            }
+            .map(\.element)
+    }
+
+    private func setManualMode(_ enabled: Bool) {
+        manualMode = enabled
+        guard let collectionId else { return }
+        defaults.set(enabled, forKey: "library.collection.\(collectionId).manual")
+    }
+
+    private func persistManualOrder() {
+        guard let collectionId else { return }
+        defaults.set(manualOrder, forKey: "library.collection.\(collectionId).order")
     }
 
     init(
@@ -62,6 +133,13 @@ final class LibraryViewModel {
         sortField = defaults.string(forKey: "library.sortField")
             .flatMap(LibrarySortField.init(rawValue:)) ?? .dateAdded
         sortAscending = defaults.object(forKey: "library.sortAscending") as? Bool ?? false
+        if let collectionId {
+            manualMode = defaults.bool(forKey: "library.collection.\(collectionId).manual")
+            manualOrder = defaults.stringArray(forKey: "library.collection.\(collectionId).order") ?? []
+        } else {
+            manualMode = false
+            manualOrder = []
+        }
     }
 
     func coverURL(for item: BookListItem) -> URL? {

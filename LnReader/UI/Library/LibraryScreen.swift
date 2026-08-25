@@ -82,11 +82,13 @@ private struct LibraryContent: View {
     private enum ActiveSheet: Identifiable {
         case detail(BookListItem)
         case newCollection
+        case reorder
 
         var id: String {
             switch self {
             case .detail(let item): item.id
             case .newCollection: "new-collection"
+            case .reorder: "reorder"
             }
         }
     }
@@ -148,6 +150,8 @@ private struct LibraryContent: View {
                 CollectionNameSheet { name in
                     Task { await model.createCollection(named: name) }
                 }
+            case .reorder:
+                ReorderSheet(model: model)
             }
         }
         .confirmationDialog(
@@ -265,17 +269,37 @@ private struct LibraryContent: View {
 
     private var sortMenu: some View {
         Menu {
-            Picker("Sort by", selection: $model.sortField) {
-                Text("Name").tag(LibrarySortField.name)
-                Text("Date added").tag(LibrarySortField.dateAdded)
+            Picker("Sort by", selection: Binding(
+                get: { model.sortChoice },
+                set: { choice in
+                    model.sortChoice = choice
+                    // Picking Manual goes straight to arranging, like Android's
+                    // ReorderScreen.
+                    if choice == .manual { activeSheet = .reorder }
+                }
+            )) {
+                Text("Name").tag(LibrarySortChoice.name)
+                Text("Date added").tag(LibrarySortChoice.dateAdded)
+                if collectionName != nil {
+                    Text("Manual").tag(LibrarySortChoice.manual)
+                }
             }
-            Picker("Direction", selection: $model.sortAscending) {
-                Text("Ascending").tag(true)
-                Text("Descending").tag(false)
+            if model.sortChoice == .manual {
+                Button {
+                    activeSheet = .reorder
+                } label: {
+                    Label("Reorder…", systemImage: "line.3.horizontal")
+                }
+            } else {
+                Picker("Direction", selection: $model.sortAscending) {
+                    Text("Ascending").tag(true)
+                    Text("Descending").tag(false)
+                }
             }
         } label: {
             Image(systemName: "arrow.up.arrow.down")
         }
+        .accessibilityLabel("Sort")
     }
 }
 

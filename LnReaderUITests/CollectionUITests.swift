@@ -1,10 +1,23 @@
 import XCTest
 
 final class CollectionUITests: XCTestCase {
+    /// Launches and lands on the Library tab — resume-on-launch may open the
+    /// app on the Player tab when a saved position exists.
     @MainActor
-    func testCreateCollectionFromLibraryPlusMenu() throws {
+    private func launchAtLibrary() -> XCUIApplication {
         let app = XCUIApplication()
         app.launch()
+        // firstMatch: the tab bar exposes each tab twice in the accessibility tree.
+        let libraryTab = app.buttons["Library"].firstMatch
+        if libraryTab.waitForExistence(timeout: 10) {
+            libraryTab.tap()
+        }
+        return app
+    }
+
+    @MainActor
+    func testCreateCollectionFromLibraryPlusMenu() throws {
+        let app = launchAtLibrary()
 
         let add = app.buttons["Add"]
         XCTAssertTrue(add.waitForExistence(timeout: 10), "Add button missing from Library toolbar")
@@ -31,8 +44,7 @@ final class CollectionUITests: XCTestCase {
 
     @MainActor
     func testTappingBookOpensDetailSheet() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launchAtLibrary()
 
         let cell = app.descendants(matching: .any).matching(identifier: "book-cell").firstMatch
         guard cell.waitForExistence(timeout: 10) else {

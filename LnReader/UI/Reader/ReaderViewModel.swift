@@ -196,6 +196,9 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
         """
         let highlightColor = darkMode ? "rgba(255, 214, 79, 0.35)" : "rgba(255, 214, 79, 0.55)"
         let css = """
+        /* System font (San Francisco) instead of WebKit's Times default. */
+        body { font-family: -apple-system, "Helvetica Neue", sans-serif !important; }
+        body * { font-family: inherit !important; }
         \(darkMode ? darkCss : "")
         .lnvox-active { background-color: \(highlightColor) !important; border-radius: 3px; }
         """
