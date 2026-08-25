@@ -136,6 +136,32 @@ top level in one statement; "delete the books too" walks the members through
 cover shelf (simplified from Android's overlapping 3×3). Per-collection
 manual sort is not ported yet.
 
+## EPUB reader + sync
+
+- **Zip**: Foundation ships no unzip API on iOS, so `ZipArchive`
+  (LnReaderCore) is a minimal central-directory reader — stored + deflate via
+  the Compression framework (`COMPRESSION_ZLIB` = raw DEFLATE, exactly what
+  zip stores), no zip64/encryption, path-traversal guarded. Same
+  no-third-party ethos as the m4b parser; tested against synthetic zips and
+  both real ln-vox EPUBs (`swift run EpubDump <file>`).
+- **EpubReader** extracts once (idempotent marker file) into
+  `epubs/<bookId>/` and parses container.xml → OPF manifest + spine into
+  root-relative page paths. Manifest `xhtml` values match these paths exactly.
+- **ReaderViewModel** owns a WKWebView (`loadFileURL` with read access to the
+  extraction dir — no web server needed), a 400 ms follow loop that maps
+  `engine.positionMs` → beat (`SyncManifest.beatAt`) → spine page, and JS
+  injection: an `lnvox-active` class + `scrollIntoView` for highlighting,
+  a `<style>` block for dark mode / highlight, `-webkit-text-size-adjust`
+  for text zoom (80–250 %, persisted app-wide with dark mode).
+- Auto-follow is on when sync exists and the reader's book is the player's;
+  manual paging turns it off; **Resume** re-engages and jumps to the beat.
+- The reader presents as a full-screen cover (`AppNavigation.readerBookId`),
+  entered from the player top bar or the detail sheet.
+- **Scrubber image markers**: manifest images with an embedded m4b image at
+  the same ordinal render as tappable dots above the player scrubber at their
+  chapter-local fraction, opening the full-screen image viewer — m4b-backed
+  by spec, as on Android.
+
 ## Signing / distribution
 
 - Automatic signing; team is selected in Xcode (or `DEVELOPMENT_TEAM` in

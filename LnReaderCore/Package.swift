@@ -18,7 +18,8 @@ let package = Package(
             .product(name: "GRDB", package: "GRDB.swift"),
         ]),
         .testTarget(name: "LnReaderCoreTests", dependencies: ["LnReaderCore"]),
-        // Dev tool: dump parsed metadata/chapters of an m4b (swift run m4bdump <file>).
+        // Dev tools: dump parsed m4b metadata / EPUB spine (swift run M4bDump|EpubDump <file>).
         .executableTarget(name: "M4bDump", dependencies: ["LnReaderCore"]),
+        .executableTarget(name: "EpubDump", dependencies: ["LnReaderCore"]),
     ]
 )

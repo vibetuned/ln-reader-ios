@@ -22,7 +22,15 @@ struct PlayerScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if let book = engine.book {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        if book.epubPath != nil {
+                            Button {
+                                navigation.showReader(bookId: book.id)
+                            } label: {
+                                Image(systemName: "book")
+                            }
+                            .accessibilityLabel("Read")
+                        }
                         Button {
                             navigation.showImages(bookId: book.id)
                         } label: {
@@ -37,10 +45,20 @@ struct PlayerScreen: View {
 
 private struct PlayerContent: View {
     @Environment(PlayerEngine.self) private var engine
+    @Environment(\.appContainer) private var container
 
     // While dragging, the scrubber drives this book-absolute preview position.
     @State private var scrubMs: Int64?
     @State private var showChapters = false
+    /// Sync-manifest images that have a matching embedded m4b image (matched
+    /// by ordinal, like Android) — they render as tappable scrubber markers.
+    @State private var markers: [SyncImage] = []
+    @State private var embeddedImageURLs: [URL] = []
+    @State private var markerSelection: MarkerSelection?
+
+    private struct MarkerSelection: Identifiable {
+        let id: Int
+    }
 
     private var displayMs: Int64 { scrubMs ?? engine.positionMs }
     private var chapter: ChapterWindow? { engine.locator.window(atMs: displayMs) }
@@ -93,6 +111,24 @@ private struct PlayerContent: View {
         .sheet(isPresented: $showChapters) {
             ChapterListSheet()
         }
+        .fullScreenCover(item: $markerSelection) { selection in
+            FullScreenImageViewer(imageURLs: embeddedImageURLs, startIndex: selection.id)
+        }
+        .task(id: engine.book?.id) { await loadMarkers() }
+    }
+
+    /// Markers are m4b-backed by spec: a manifest image only becomes a marker
+    /// if an embedded image exists at the same ordinal.
+    private func loadMarkers() async {
+        markers = []
+        embeddedImageURLs = []
+        guard let book = engine.book else { return }
+        guard let detail = try? await container.bookRepository.detail(bookId: book.id) else { return }
+        embeddedImageURLs = detail.images.map { container.fileStore.url(for: $0.cachePath) }
+        guard let syncPath = book.syncPath,
+              let manifest = SyncManifestParser.parse(fileURL: container.fileStore.url(for: syncPath))
+        else { return }
+        markers = manifest.images.filter { $0.ordinal < detail.images.count }
     }
 
     private var chapterSelector: some View {
@@ -121,6 +157,7 @@ private struct PlayerContent: View {
         let localMs = displayMs - windowStart
 
         return VStack(spacing: 6) {
+            markerRow(windowStart: windowStart, windowDuration: windowDuration)
             Slider(
                 value: Binding(
                     get: { Double(localMs) },
@@ -144,6 +181,39 @@ private struct PlayerContent: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// Image markers within the current chapter, at their chapter-local
+    /// fraction (inset by the slider thumb radius); tap opens the m4b image.
+    @ViewBuilder
+    private func markerRow(windowStart: Int64, windowDuration: Int64) -> some View {
+        let windowEnd = windowStart + windowDuration
+        let inChapter = markers.filter { marker in
+            let triggerMs = Int64(marker.triggerSeconds * 1000)
+            return triggerMs >= windowStart && triggerMs < windowEnd
+        }
+        if inChapter.isEmpty {
+            EmptyView()
+        } else {
+            GeometryReader { proxy in
+                let thumbInset: CGFloat = 14
+                let usable = proxy.size.width - thumbInset * 2
+                ForEach(inChapter, id: \.ordinal) { marker in
+                    let fraction = Double(Int64(marker.triggerSeconds * 1000) - windowStart)
+                        / Double(max(1, windowDuration))
+                    Button {
+                        markerSelection = MarkerSelection(id: marker.ordinal)
+                    } label: {
+                        Image(systemName: "photo.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Color.accentColor)
+                            .background(Circle().fill(.background))
+                    }
+                    .position(x: thumbInset + usable * fraction, y: 8)
+                }
+            }
+            .frame(height: 16)
         }
     }
 

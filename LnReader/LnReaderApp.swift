@@ -45,6 +45,9 @@ struct LnReaderApp: App {
         if arguments.contains("-showImages") {
             navigation.selectedTab = .images
         }
+        if arguments.contains("-showReader"), let bookId = engine.book?.id {
+            navigation.showReader(bookId: bookId)
+        }
         #endif
     }
 

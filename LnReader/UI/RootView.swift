@@ -35,5 +35,19 @@ struct RootView: View {
                     .padding(.bottom, horizontalSizeClass == .compact ? 72 : 8)
             }
         }
+        .fullScreenCover(item: readerTarget) { target in
+            ReaderScreen(bookId: target.id)
+        }
+    }
+
+    private var readerTarget: Binding<ReaderTarget?> {
+        Binding(
+            get: { navigation.readerBookId.map(ReaderTarget.init(id:)) },
+            set: { navigation.readerBookId = $0?.id }
+        )
+    }
+
+    private struct ReaderTarget: Identifiable {
+        let id: String
     }
 }

@@ -64,6 +64,8 @@ swift run M4bDump <file.m4b>  # dump parsed metadata/chapters of a real m4b
 - [x] Image viewer — embedded-image grid, full-screen pager with pinch zoom
       (5×), double-tap zoom, swipe between images
 - [x] Companions — attach/detach EPUB + sync manifest from the detail sheet
-- [ ] EPUB reader + audio-synced highlighting
+- [x] EPUB reader — custom zip extractor + OPF spine parser (LnReaderCore),
+      WKWebView reader with manual paging, light/dark + text size, audio-synced
+      beat highlighting with auto-follow + Resume, scrubber image markers
 - [ ] Playback speed persistence, per-collection manual sort (Android parity
       gaps)

@@ -50,6 +50,14 @@ struct BookDetailSheet: View {
                     } label: {
                         Label("View images", systemImage: "photo.on.rectangle")
                     }
+                    if book.epubPath != nil {
+                        Button {
+                            navigation.showReader(bookId: book.id)
+                            dismiss()
+                        } label: {
+                            Label("Read", systemImage: "book")
+                        }
+                    }
                 }
 
                 collectionSection
