@@ -44,11 +44,25 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 
+  LnReaderUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - LnReaderUITests
+    dependencies:
+      - target: LnReader
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+
 schemes:
   LnReader:
     build:
       targets:
         LnReader: all
+    test:
+      targets:
+        - LnReaderUITests
     run:
       config: Debug
       # DEBUG dev hook — tick one of these in Edit Scheme > Run > Arguments to

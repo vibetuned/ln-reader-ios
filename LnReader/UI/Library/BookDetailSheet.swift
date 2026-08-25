@@ -13,10 +13,14 @@ struct BookDetailSheet: View {
     @Environment(AppNavigation.self) private var navigation
 
     @State private var confirmingRemove = false
-    @State private var attachingEpub = false
-    @State private var attachingSync = false
-    @State private var askingNewCollectionName = false
-    @State private var newCollectionName = ""
+    @State private var pickingCompanion: CompanionKind?
+    @State private var askingNewCollection = false
+
+    /// One fileImporter serves both companions — two `.fileImporter` modifiers
+    /// on the same view conflict (only the last one presents).
+    private enum CompanionKind {
+        case epub, sync
+    }
 
     private static let epubType = UTType(filenameExtension: "epub") ?? .zip
 
@@ -81,28 +85,24 @@ struct BookDetailSheet: View {
                 }
             }
             .fileImporter(
-                isPresented: $attachingEpub,
-                allowedContentTypes: [Self.epubType]
+                isPresented: Binding(
+                    get: { pickingCompanion != nil },
+                    set: { if !$0 { pickingCompanion = nil } }
+                ),
+                allowedContentTypes: pickingCompanion == .epub ? [Self.epubType] : [.json]
             ) { result in
-                if case .success(let url) = result {
-                    Task { await model.attachEpub(bookId: book.id, from: url) }
+                guard case .success(let url) = result, let kind = pickingCompanion else { return }
+                Task {
+                    switch kind {
+                    case .epub: await model.attachEpub(bookId: book.id, from: url)
+                    case .sync: await model.attachSync(bookId: book.id, from: url)
+                    }
                 }
             }
-            .fileImporter(
-                isPresented: $attachingSync,
-                allowedContentTypes: [.json]
-            ) { result in
-                if case .success(let url) = result {
-                    Task { await model.attachSync(bookId: book.id, from: url) }
+            .sheet(isPresented: $askingNewCollection) {
+                CollectionNameSheet(confirmTitle: "Create & add") { name in
+                    Task { await model.addBook(bookId: book.id, toNewCollectionNamed: name) }
                 }
-            }
-            .alert("New collection", isPresented: $askingNewCollectionName) {
-                TextField("Name", text: $newCollectionName)
-                Button("Create & add") {
-                    Task { await model.addBook(bookId: book.id, toNewCollectionNamed: newCollectionName) }
-                    newCollectionName = ""
-                }
-                Button("Cancel", role: .cancel) { newCollectionName = "" }
             }
         }
     }
@@ -152,7 +152,7 @@ struct BookDetailSheet: View {
                     }
                     Divider()
                     Button("New collection…") {
-                        askingNewCollectionName = true
+                        askingNewCollection = true
                     }
                 } label: {
                     Label("Add to collection", systemImage: "folder.badge.plus")
@@ -166,13 +166,13 @@ struct BookDetailSheet: View {
             companionRow(
                 title: "EPUB",
                 attached: book.epubPath != nil,
-                attach: { attachingEpub = true },
+                attach: { pickingCompanion = .epub },
                 detach: { Task { await model.detachEpub(bookId: book.id) } }
             )
             companionRow(
                 title: "Sync manifest",
                 attached: book.syncPath != nil,
-                attach: { attachingSync = true },
+                attach: { pickingCompanion = .sync },
                 detach: { Task { await model.detachSync(bookId: book.id) } }
             )
         } header: {

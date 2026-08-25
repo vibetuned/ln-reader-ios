@@ -73,10 +73,23 @@ private struct LibraryContent: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var showImporter = false
-    @State private var selectedBook: BookListItem?
-    @State private var askingNewCollectionName = false
-    @State private var newCollectionName = ""
+    @State private var activeSheet: ActiveSheet?
     @State private var confirmingCollectionDelete = false
+
+    /// One sheet modifier for all sheets — SwiftUI honors only one `.sheet`
+    /// (and one `.alert`) per view, so presentations must not be split across
+    /// same-type modifiers on the same node.
+    private enum ActiveSheet: Identifiable {
+        case detail(BookListItem)
+        case newCollection
+
+        var id: String {
+            switch self {
+            case .detail(let item): item.id
+            case .newCollection: "new-collection"
+            }
+        }
+    }
 
     private static let m4bType = UTType(filenameExtension: "m4b", conformingTo: .audiovisualContent)
         ?? .mpeg4Audio
@@ -124,17 +137,16 @@ private struct LibraryContent: View {
                 Task { await model.importBook(from: url) }
             }
         }
-        .sheet(item: $selectedBook) { item in
-            BookDetailSheet(item: item, model: model)
-                .presentationDetents([.medium, .large])
-        }
-        .alert("New collection", isPresented: $askingNewCollectionName) {
-            TextField("Name", text: $newCollectionName)
-            Button("Create") {
-                Task { await model.createCollection(named: newCollectionName) }
-                newCollectionName = ""
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .detail(let item):
+                BookDetailSheet(item: item, model: model)
+                    .presentationDetents([.medium, .large])
+            case .newCollection:
+                CollectionNameSheet { name in
+                    Task { await model.createCollection(named: name) }
+                }
             }
-            Button("Cancel", role: .cancel) { newCollectionName = "" }
         }
         .confirmationDialog(
             "Delete \"\(collectionName ?? "")\"?",
@@ -180,13 +192,14 @@ private struct LibraryContent: View {
                         Label("Import book", systemImage: "waveform")
                     }
                     Button {
-                        askingNewCollectionName = true
+                        activeSheet = .newCollection
                     } label: {
                         Label("New collection", systemImage: "folder.badge.plus")
                     }
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add")
             } else {
                 // Inside a collection, + imports straight into it.
                 Button {
@@ -220,7 +233,7 @@ private struct LibraryContent: View {
                                 Label("Open", systemImage: "play.fill")
                             }
                             Button {
-                                selectedBook = item
+                                activeSheet = .detail(item)
                             } label: {
                                 Label("Details", systemImage: "info.circle")
                             }
