@@ -114,7 +114,8 @@ private struct PlayerContent: View {
         .fullScreenCover(item: $markerSelection) { selection in
             FullScreenImageViewer(imageURLs: embeddedImageURLs, startIndex: selection.id)
         }
-        .task(id: engine.book?.id) { await loadMarkers() }
+        // Keyed on syncPath too: attaching a manifest must reload the markers.
+        .task(id: [engine.book?.id, engine.book?.syncPath]) { await loadMarkers() }
     }
 
     /// Markers are m4b-backed by spec: a manifest image only becomes a marker

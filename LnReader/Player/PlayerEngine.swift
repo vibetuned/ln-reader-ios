@@ -37,6 +37,7 @@ final class PlayerEngine {
     private var timeObserver: Any?
     private var itemEndObserver: NSObjectProtocol?
     private var interruptionObserver: NSObjectProtocol?
+    private var detailObservationTask: Task<Void, Never>?
     private var ticksSinceSave = 0
     private var wasPlayingBeforeInterruption = false
 
@@ -66,6 +67,7 @@ final class PlayerEngine {
         chapters = detail.chapters
         cover = detail.book.coverPath
             .flatMap { UIImage(contentsOfFile: fileStore.url(for: $0).path) }
+        observeDetailChanges(bookId: bookId)
 
         var startMs = (try? await positionRepository.get(bookId: bookId)).flatMap { $0 } ?? 0
         // A finished book's saved position is its end; restart it instead of instantly re-ending.
@@ -87,9 +89,27 @@ final class PlayerEngine {
         }
     }
 
+    /// Follows the loaded book's row so companion attach/detach (epubPath /
+    /// syncPath) reflects live in the player UI without reopening the book.
+    private func observeDetailChanges(bookId: String) {
+        detailObservationTask?.cancel()
+        detailObservationTask = Task { [weak self] in
+            guard let repository = self?.bookRepository else { return }
+            let observation = repository.observeDetail(bookId: bookId)
+            do {
+                for try await detail in observation {
+                    guard let self, let detail, self.book?.id == bookId else { break }
+                    self.book = detail.book
+                    self.chapters = detail.chapters
+                }
+            } catch {}
+        }
+    }
+
     /// Clears the loaded book (used when it's deleted from the library).
     func unload(bookId: String) {
         guard book?.id == bookId else { return }
+        detailObservationTask?.cancel()
         player.pause()
         player.replaceCurrentItem(with: nil)
         book = nil

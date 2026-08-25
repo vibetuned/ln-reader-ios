@@ -39,7 +39,11 @@ struct MiniPlayer: View {
         .shadow(radius: 6, y: 2)
         .frame(maxWidth: 480)
         .contentShape(Rectangle())
-        .onTapGesture { navigation.selectedTab = .player }
+        .onTapGesture {
+            // From inside the reader cover, tapping also closes the reader.
+            navigation.readerBookId = nil
+            navigation.selectedTab = .player
+        }
     }
 
     private var progressBars: some View {

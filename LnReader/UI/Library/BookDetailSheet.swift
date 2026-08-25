@@ -13,7 +13,11 @@ struct BookDetailSheet: View {
     @Environment(AppNavigation.self) private var navigation
 
     @State private var confirmingRemove = false
-    @State private var pickingCompanion: CompanionKind?
+    @State private var importerPresented = false
+    /// Which companion the importer picks for. Kept separate from
+    /// `importerPresented`: the dismissal fires BEFORE the completion handler,
+    /// so a combined optional would already be nil when the result arrives.
+    @State private var companionKind: CompanionKind = .epub
     @State private var askingNewCollection = false
 
     /// One fileImporter serves both companions — two `.fileImporter` modifiers
@@ -93,13 +97,11 @@ struct BookDetailSheet: View {
                 }
             }
             .fileImporter(
-                isPresented: Binding(
-                    get: { pickingCompanion != nil },
-                    set: { if !$0 { pickingCompanion = nil } }
-                ),
-                allowedContentTypes: pickingCompanion == .epub ? [Self.epubType] : [.json]
+                isPresented: $importerPresented,
+                allowedContentTypes: companionKind == .epub ? [Self.epubType] : [.json]
             ) { result in
-                guard case .success(let url) = result, let kind = pickingCompanion else { return }
+                guard case .success(let url) = result else { return }
+                let kind = companionKind
                 Task {
                     switch kind {
                     case .epub: await model.attachEpub(bookId: book.id, from: url)
@@ -174,13 +176,19 @@ struct BookDetailSheet: View {
             companionRow(
                 title: "EPUB",
                 attached: book.epubPath != nil,
-                attach: { pickingCompanion = .epub },
+                attach: {
+                    companionKind = .epub
+                    importerPresented = true
+                },
                 detach: { Task { await model.detachEpub(bookId: book.id) } }
             )
             companionRow(
                 title: "Sync manifest",
                 attached: book.syncPath != nil,
-                attach: { pickingCompanion = .sync },
+                attach: {
+                    companionKind = .sync
+                    importerPresented = true
+                },
                 detach: { Task { await model.detachSync(bookId: book.id) } }
             )
         } header: {

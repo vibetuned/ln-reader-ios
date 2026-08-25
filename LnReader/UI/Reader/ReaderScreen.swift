@@ -49,6 +49,7 @@ struct ReaderScreen: View {
 
 private struct ReaderContent: View {
     @Bindable var model: ReaderViewModel
+    @Environment(PlayerEngine.self) private var engine
 
     var body: some View {
         Group {
@@ -56,7 +57,13 @@ private struct ReaderContent: View {
                 ContentUnavailableView("Cannot read", systemImage: "book.closed", description: Text(error))
             } else {
                 WebViewContainer(webView: model.webView)
-                    .ignoresSafeArea(edges: .bottom)
+                    .safeAreaInset(edge: .bottom) {
+                        if engine.book != nil {
+                            MiniPlayer()
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
+                        }
+                    }
             }
         }
         .toolbar {
