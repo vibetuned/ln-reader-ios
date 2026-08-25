@@ -52,6 +52,37 @@ bare Command Line Tools, so parser/model logic is testable without a simulator.
   Xcode is installed). `Sources/SelfTest` is a temporary framework-free runner
   for CLT-only environments; delete it when Xcode is the norm.
 
+## Data layer
+
+- **GRDB** (`AppDatabase` in LnReaderCore) with an incremental, non-destructive
+  migrator — same policy as Android. Schema v1 mirrors Room v5 minus the
+  Android-only columns: no `uri`/`isDownloaded` (iOS has no SAF; every import
+  copies the picked file into the app container, so the app owns all audio
+  files), no vestigial `syncKey`.
+- **Paths are stored relative** to `FileStore.baseURL` (Application Support/
+  LnReader) because the iOS container path changes across app updates/restores.
+- Repositories live in LnReaderCore and are tested with `swift test` on macOS
+  (in-memory GRDB + temp-dir FileStore).
+
+## Import flow (iOS)
+
+```
+fileImporter → security-scoped URL
+  → chunked copy (8 MB, progress) into books/<id>/<name>.m4b
+  → M4bParser.parse on the local copy
+  → extract embedded images to books/<id>/images/
+  → one GRDB transaction: book + chapters + images
+  failure at any step deletes books/<id>/
+```
+
+Deviation from Android: there is no local-vs-remote distinction — iOS always
+copies (Android only copied cloud SAF sources). Same duplicate-on-reimport
+limitation as Android (UUID-keyed, no content hashing).
+
+Dev hook (DEBUG builds): `xcrun simctl launch booted com.vibetuned.lnreader
+-autoImport <host path>` imports a book without driving the file picker — the
+simulator can read host paths. Handy for smoke tests with real books.
+
 ## Signing / distribution
 
 - Automatic signing; team is selected in Xcode (or `DEVELOPMENT_TEAM` in

@@ -37,8 +37,8 @@ or set `DEVELOPMENT_TEAM` in `project.yml`.
 ```sh
 cd LnReaderCore
 swift build
-swift test          # XCTest — needs Xcode installed
-swift run SelfTest  # framework-free checks — works with Command Line Tools only
+swift test                    # unit tests (parser, sync manifest, repository)
+swift run M4bDump <file.m4b>  # dump parsed metadata/chapters of a real m4b
 ```
 
 ## Status
@@ -46,7 +46,11 @@ swift run SelfTest  # framework-free checks — works with Command Line Tools on
 - [x] `M4bParser` — MP4 atom walker, Nero `chpl` chapters (both header
       variants), `ilst` metadata, embedded `covr` images
 - [x] `SyncManifest` — beat/image manifest parsing + `beatAt` lookup
-- [ ] Library (import, grid, collections)
+- [x] Data layer — GRDB schema, `BookRepository` (import/delete/observe,
+      companion attach/detach), relative-path `FileStore`
+- [x] Library — cover grid with progress bars, sort, `.m4b` file import with
+      phase progress, detail sheet with remove
+- [ ] Collections
 - [ ] Player (AVFoundation, background audio, lock-screen controls)
 - [ ] Sleep timer
 - [ ] Image viewer
