@@ -140,8 +140,10 @@ private struct LibraryContent: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .detail(let item):
+                // Large detent: the sheet holds enough sections (collection,
+                // companions, remove) that medium hides most of them.
                 BookDetailSheet(item: item, model: model)
-                    .presentationDetents([.medium, .large])
+                    .presentationDetents([.large])
             case .newCollection:
                 CollectionNameSheet { name in
                     Task { await model.createCollection(named: name) }
@@ -224,8 +226,12 @@ private struct LibraryContent: View {
                     }
                 }
                 ForEach(model.sortedItems) { item in
+                    // Tap opens the detail sheet (Open / images / collection /
+                    // companions / remove); Android's tap-to-play lives on the
+                    // sheet's Open button and the long-press menu instead.
                     BookGridCell(item: item, coverURL: model.coverURL(for: item))
-                        .onTapGesture { play(item) }
+                        .onTapGesture { activeSheet = .detail(item) }
+                        .accessibilityIdentifier("book-cell")
                         .contextMenu {
                             Button {
                                 play(item)

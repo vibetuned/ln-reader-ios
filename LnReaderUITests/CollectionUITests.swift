@@ -28,4 +28,30 @@ final class CollectionUITests: XCTestCase {
             "Created collection \"\(name)\" not visible in the library grid"
         )
     }
+
+    @MainActor
+    func testTappingBookOpensDetailSheet() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let cell = app.descendants(matching: .any).matching(identifier: "book-cell").firstMatch
+        guard cell.waitForExistence(timeout: 10) else {
+            throw XCTSkip("No book in the library — import one to exercise this test")
+        }
+        cell.tap()
+
+        XCTAssertTrue(
+            app.buttons["Open"].waitForExistence(timeout: 5),
+            "Detail sheet with Open button should appear on book tap"
+        )
+        // The membership control is a Menu ("Add to collection") or a button
+        // ("Remove from …") depending on state; match by label either way.
+        let membershipControl = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS[c] 'collection'"))
+            .firstMatch
+        XCTAssertTrue(
+            membershipControl.waitForExistence(timeout: 3),
+            "Detail sheet should offer collection membership"
+        )
+    }
 }
