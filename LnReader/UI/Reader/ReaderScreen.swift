@@ -67,6 +67,8 @@ private struct ReaderContent: View {
             }
         }
         .toolbar {
+            // Plain buttons only — a Menu in the toolbar breaks the system's
+            // "…" overflow menu, but buttons collapse into it correctly.
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if model.hasSync, !model.followEnabled {
                     Button {

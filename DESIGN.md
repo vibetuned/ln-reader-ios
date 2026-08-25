@@ -164,6 +164,16 @@ manual sort is not ported yet.
 - The reader injects `-apple-system` (San Francisco) as the body font —
   WebKit defaults to Times when the EPUB doesn't specify one.
 
+## Toolbar rule: no Menu in overflow-prone toolbars
+
+A SwiftUI `Menu` among toolbar items breaks the system's "…" overflow menu on
+iPadOS — tapping the ellipsis does nothing (with a
+`updateVisibleMenuWithBlock` console warning). Any toolbar that can collapse
+(4+ items, narrow windows) must use plain Buttons that present sheets
+instead. This is why playback speed is a Button + SpeedSheet (which is also
+Android parity) rather than an inline Menu. The Library's sort/add Menus are
+fine only because those toolbars never exceed two items per side.
+
 ## Sort & speed persistence
 
 - Playback speed persists app-wide (`player.rate` in UserDefaults), applied

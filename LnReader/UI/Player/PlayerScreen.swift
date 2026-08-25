@@ -4,7 +4,12 @@ import LnReaderCore
 struct PlayerScreen: View {
     @Environment(PlayerEngine.self) private var engine
     @Environment(AppNavigation.self) private var navigation
-    @State private var showTimerSheet = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: String, Identifiable {
+        case timer, speed
+        var id: String { rawValue }
+    }
 
     var body: some View {
         NavigationStack {
@@ -22,11 +27,20 @@ struct PlayerScreen: View {
             .navigationTitle("Player")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // Plain buttons only: a Menu anywhere in the toolbar breaks the
+                // system's "…" overflow menu (it silently fails to open), so
+                // speed presents a sheet instead — like Android's SpeedSheet.
                 if let book = engine.book {
                     ToolbarItemGroup(placement: .topBarTrailing) {
-                        speedMenu
                         Button {
-                            showTimerSheet = true
+                            activeSheet = .speed
+                        } label: {
+                            Text("\(engine.rate.formatted(.number.precision(.fractionLength(0...2))))×")
+                                .font(.subheadline.monospacedDigit())
+                        }
+                        .accessibilityLabel("Playback speed")
+                        Button {
+                            activeSheet = .timer
                         } label: {
                             Image(systemName: "moon.zzz")
                         }
@@ -44,40 +58,64 @@ struct PlayerScreen: View {
                         } label: {
                             Image(systemName: "photo.on.rectangle")
                         }
+                        .accessibilityLabel("Images")
                     }
                 }
             }
-            .sheet(isPresented: $showTimerSheet) {
-                NavigationStack {
-                    TimerControls()
-                        .navigationTitle("Sleep Timer")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button("Done") { showTimerSheet = false }
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .timer:
+                    NavigationStack {
+                        TimerControls()
+                            .navigationTitle("Sleep Timer")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Done") { activeSheet = nil }
+                                }
                             }
-                        }
+                    }
+                    .presentationDetents([.medium, .large])
+                case .speed:
+                    SpeedSheet()
                 }
-                .presentationDetents([.medium, .large])
             }
         }
     }
+}
 
-    private var speedMenu: some View {
-        Menu {
-            Picker("Speed", selection: Binding(
-                get: { engine.rate },
-                set: { engine.setRate($0) }
-            )) {
-                ForEach(PlayerEngine.speedPresets, id: \.self) { preset in
-                    Text("\(preset.formatted(.number.precision(.fractionLength(0...2))))×").tag(preset)
+/// Playback speed presets, presented as a sheet (Android's SpeedSheet).
+private struct SpeedSheet: View {
+    @Environment(PlayerEngine.self) private var engine
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(PlayerEngine.speedPresets, id: \.self) { preset in
+                Button {
+                    engine.setRate(preset)
+                } label: {
+                    HStack {
+                        Text("\(preset.formatted(.number.precision(.fractionLength(0...2))))×")
+                            .monospacedDigit()
+                        Spacer()
+                        if engine.rate == preset {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                }
+                .foregroundStyle(.primary)
+            }
+            .navigationTitle("Playback speed")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
                 }
             }
-        } label: {
-            Text("\(engine.rate.formatted(.number.precision(.fractionLength(0...2))))×")
-                .font(.subheadline.monospacedDigit())
         }
-        .accessibilityLabel("Playback speed")
+        .presentationDetents([.medium, .large])
     }
 }
 
