@@ -4,16 +4,19 @@ import SwiftUI
 struct LnReaderApp: App {
     private let container: AppContainer
     @State private var engine: PlayerEngine
+    @State private var sleepTimer: SleepTimerController
     @State private var navigation = AppNavigation()
 
     init() {
         let container = AppContainer()
         self.container = container
-        _engine = State(initialValue: PlayerEngine(
+        let engine = PlayerEngine(
             bookRepository: container.bookRepository,
             positionRepository: container.positionRepository,
             fileStore: container.fileStore
-        ))
+        )
+        _engine = State(initialValue: engine)
+        _sleepTimer = State(initialValue: SleepTimerController(engine: engine))
     }
 
     var body: some Scene {
@@ -21,6 +24,7 @@ struct LnReaderApp: App {
             RootView()
                 .environment(\.appContainer, container)
                 .environment(engine)
+                .environment(sleepTimer)
                 .environment(navigation)
                 .task { await onLaunch() }
         }
@@ -31,6 +35,17 @@ struct LnReaderApp: App {
         await autoImportIfRequested()
         #endif
         await restoreLastBook()
+        #if DEBUG
+        // Dev hooks for scripted smoke tests.
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-armChapterTimer") {
+            sleepTimer.start(SleepTimerConfig(mode: .chapters(count: 1), fadeOutSeconds: 10))
+            navigation.selectedTab = .timer
+        }
+        if arguments.contains("-showImages") {
+            navigation.selectedTab = .images
+        }
+        #endif
     }
 
     /// On a fresh launch, reopen the last-played book paused at its saved
@@ -54,9 +69,21 @@ struct LnReaderApp: App {
         let arguments = ProcessInfo.processInfo.arguments
         guard let flag = arguments.firstIndex(of: "-autoImport"), flag + 1 < arguments.count else { return }
         do {
-            let book = try await container.bookRepository.importBook(
-                from: URL(fileURLWithPath: arguments[flag + 1]))
+            let sourceURL = URL(fileURLWithPath: arguments[flag + 1])
+            let book = try await container.bookRepository.importBook(from: sourceURL)
             print("autoImport: imported \(book.title)")
+            // Attach sibling companions when they sit next to the m4b
+            // (ln-vox output layout: book.m4b + *.epub + sync_manifest.json).
+            let siblings = (try? FileManager.default.contentsOfDirectory(
+                at: sourceURL.deletingLastPathComponent(), includingPropertiesForKeys: nil)) ?? []
+            if let epub = siblings.first(where: { $0.pathExtension == "epub" }) {
+                try await container.bookRepository.attachEpub(bookId: book.id, from: epub)
+                print("autoImport: attached \(epub.lastPathComponent)")
+            }
+            if let sync = siblings.first(where: { $0.lastPathComponent == "sync_manifest.json" }) {
+                try await container.bookRepository.attachSync(bookId: book.id, from: sync)
+                print("autoImport: attached \(sync.lastPathComponent)")
+            }
             if arguments.contains("-autoPlay") {
                 container.lastBookRestoreHandled = true
                 await engine.open(bookId: book.id, autoPlay: true)

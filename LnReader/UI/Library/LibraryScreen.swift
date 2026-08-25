@@ -9,7 +9,12 @@ struct LibraryScreen: View {
     var body: some View {
         Group {
             if let model {
-                LibraryContent(model: model)
+                NavigationStack {
+                    LibraryContent(model: model, collectionName: nil)
+                        .navigationDestination(for: CollectionRoute.self) { route in
+                            CollectionView(route: route)
+                        }
+                }
             } else {
                 ProgressView()
             }
@@ -18,7 +23,40 @@ struct LibraryScreen: View {
             if model == nil {
                 model = LibraryViewModel(
                     repository: container.bookRepository,
+                    collectionRepository: container.collectionRepository,
                     fileStore: container.fileStore
+                )
+            }
+        }
+    }
+}
+
+struct CollectionRoute: Hashable {
+    let id: String
+    let name: String
+}
+
+/// One collection's contents — LibraryContent reused with a scoped model.
+private struct CollectionView: View {
+    let route: CollectionRoute
+    @Environment(\.appContainer) private var container
+    @State private var model: LibraryViewModel?
+
+    var body: some View {
+        Group {
+            if let model {
+                LibraryContent(model: model, collectionName: route.name)
+            } else {
+                ProgressView()
+            }
+        }
+        .onAppear {
+            if model == nil {
+                model = LibraryViewModel(
+                    repository: container.bookRepository,
+                    collectionRepository: container.collectionRepository,
+                    fileStore: container.fileStore,
+                    collectionId: route.id
                 )
             }
         }
@@ -27,79 +65,151 @@ struct LibraryScreen: View {
 
 private struct LibraryContent: View {
     @Bindable var model: LibraryViewModel
+    /// nil = top-level library; set = inside this collection.
+    let collectionName: String?
+
     @Environment(PlayerEngine.self) private var engine
     @Environment(AppNavigation.self) private var navigation
+    @Environment(\.dismiss) private var dismiss
+
     @State private var showImporter = false
     @State private var selectedBook: BookListItem?
+    @State private var askingNewCollectionName = false
+    @State private var newCollectionName = ""
+    @State private var confirmingCollectionDelete = false
 
     private static let m4bType = UTType(filenameExtension: "m4b", conformingTo: .audiovisualContent)
         ?? .mpeg4Audio
 
+    private var isEmpty: Bool {
+        model.sortedItems.isEmpty && (collectionName != nil || model.collections.isEmpty)
+    }
+
     var body: some View {
-        NavigationStack {
-            Group {
-                if model.sortedItems.isEmpty && model.importPhase == nil {
-                    ContentUnavailableView(
-                        "No books yet",
-                        systemImage: "books.vertical",
-                        description: Text("Tap + to import an .m4b audiobook.")
-                    )
-                } else {
-                    grid
+        Group {
+            if isEmpty && model.importPhase == nil {
+                ContentUnavailableView(
+                    collectionName == nil ? "No books yet" : "Empty collection",
+                    systemImage: "books.vertical",
+                    description: Text("Tap + to import an .m4b audiobook.")
+                )
+            } else {
+                grid
+            }
+        }
+        .navigationTitle(collectionName ?? "Library")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { sortMenu }
+            if collectionName != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(role: .destructive) {
+                        confirmingCollectionDelete = true
+                    } label: {
+                        Image(systemName: "trash")
+                    }
                 }
             }
-            .navigationTitle("Library")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) { sortMenu }
-                ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) { addButton }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if let phase = model.importPhase {
+                ImportProgressBar(phase: phase)
+            }
+        }
+        .fileImporter(
+            isPresented: $showImporter,
+            allowedContentTypes: [Self.m4bType, .mpeg4Audio]
+        ) { result in
+            if case .success(let url) = result {
+                Task { await model.importBook(from: url) }
+            }
+        }
+        .sheet(item: $selectedBook) { item in
+            BookDetailSheet(item: item, model: model)
+                .presentationDetents([.medium, .large])
+        }
+        .alert("New collection", isPresented: $askingNewCollectionName) {
+            TextField("Name", text: $newCollectionName)
+            Button("Create") {
+                Task { await model.createCollection(named: newCollectionName) }
+                newCollectionName = ""
+            }
+            Button("Cancel", role: .cancel) { newCollectionName = "" }
+        }
+        .confirmationDialog(
+            "Delete \"\(collectionName ?? "")\"?",
+            isPresented: $confirmingCollectionDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Move books back to the library") {
+                Task {
+                    await model.deleteCollection(deleteBooks: false) { _ in }
+                    dismiss()
+                }
+            }
+            Button("Delete the books too", role: .destructive) {
+                Task {
+                    await model.deleteCollection(deleteBooks: true) { engine.unload(bookId: $0) }
+                    dismiss()
+                }
+            }
+        }
+        .alert(
+            "Something went wrong",
+            isPresented: Binding(
+                get: { model.importErrorMessage != nil },
+                set: { if !$0 { model.importErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.importErrorMessage ?? "")
+        }
+        .task { await model.observeBooks() }
+        .task { await model.observeCollections() }
+    }
+
+    private var addButton: some View {
+        Group {
+            if collectionName == nil {
+                // Top level offers Book or Collection, like Android's + menu.
+                Menu {
                     Button {
                         showImporter = true
                     } label: {
-                        Image(systemName: "plus")
+                        Label("Import book", systemImage: "waveform")
                     }
-                    .disabled(model.importPhase != nil)
+                    Button {
+                        askingNewCollectionName = true
+                    } label: {
+                        Label("New collection", systemImage: "folder.badge.plus")
+                    }
+                } label: {
+                    Image(systemName: "plus")
                 }
-            }
-            .safeAreaInset(edge: .bottom) {
-                if let phase = model.importPhase {
-                    ImportProgressBar(phase: phase)
+            } else {
+                // Inside a collection, + imports straight into it.
+                Button {
+                    showImporter = true
+                } label: {
+                    Image(systemName: "plus")
                 }
-            }
-            .fileImporter(
-                isPresented: $showImporter,
-                allowedContentTypes: [Self.m4bType, .mpeg4Audio]
-            ) { result in
-                if case .success(let url) = result {
-                    Task { await model.importBook(from: url) }
-                }
-            }
-            .sheet(item: $selectedBook) { item in
-                BookDetailSheet(item: item, model: model)
-                    .presentationDetents([.medium])
-            }
-            .alert(
-                "Something went wrong",
-                isPresented: Binding(
-                    get: { model.importErrorMessage != nil },
-                    set: { if !$0 { model.importErrorMessage = nil } }
-                )
-            ) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(model.importErrorMessage ?? "")
             }
         }
-        .task { await model.observe() }
-    }
-
-    private func play(_ item: BookListItem) {
-        Task { await engine.open(bookId: item.book.id, autoPlay: true) }
-        navigation.selectedTab = .player
+        .disabled(model.importPhase != nil)
     }
 
     private var grid: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 130, maximum: 190), spacing: 16)], spacing: 20) {
+                if collectionName == nil {
+                    ForEach(model.collections) { item in
+                        NavigationLink(value: CollectionRoute(id: item.id, name: item.collection.name)) {
+                            CollectionTile(item: item, model: model)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 ForEach(model.sortedItems) { item in
                     BookGridCell(item: item, coverURL: model.coverURL(for: item))
                         .onTapGesture { play(item) }
@@ -129,6 +239,11 @@ private struct LibraryContent: View {
         }
     }
 
+    private func play(_ item: BookListItem) {
+        Task { await engine.open(bookId: item.book.id, autoPlay: true) }
+        navigation.selectedTab = .player
+    }
+
     private var sortMenu: some View {
         Menu {
             Picker("Sort by", selection: $model.sortField) {
@@ -141,6 +256,53 @@ private struct LibraryContent: View {
             }
         } label: {
             Image(systemName: "arrow.up.arrow.down")
+        }
+    }
+}
+
+/// Folder-style tile: up to four contained covers in a 2×2 mini-shelf
+/// (simplified from Android's 3×3), name, and book count.
+private struct CollectionTile: View {
+    let item: CollectionListItem
+    let model: LibraryViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(.quaternary)
+                if item.coverPaths.isEmpty {
+                    Image(systemName: "folder.fill")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                } else {
+                    shelfGrid
+                }
+            }
+            .aspectRatio(2 / 3, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            Text(item.collection.name)
+                .font(.footnote.weight(.medium))
+                .lineLimit(1)
+            Text("^[\(item.bookCount) book](inflect: true)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.top, -4)
+        }
+    }
+
+    private var shelfGrid: some View {
+        GeometryReader { proxy in
+            let cellHeight = proxy.size.height / 2 - 6
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)], spacing: 4) {
+                ForEach(Array(item.coverPaths.prefix(4).enumerated()), id: \.offset) { _, path in
+                    CoverImage(url: model.coverURL(forPath: path))
+                        .frame(height: cellHeight)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+            }
+            .padding(4)
         }
     }
 }
@@ -200,7 +362,7 @@ struct CoverImage: View {
     }
 }
 
-private struct ImportProgressBar: View {
+struct ImportProgressBar: View {
     let phase: ImportPhase
 
     var body: some View {

@@ -7,14 +7,22 @@ enum LibrarySortField: String, CaseIterable {
     case dateAdded
 }
 
+/// Backs both the top-level library (collectionId == nil: collections first,
+/// then loose books) and a single collection's view — mirroring Android's
+/// reused LibraryScreen.
 @MainActor
 @Observable
 final class LibraryViewModel {
     private let repository: BookRepository
+    private let collectionRepository: CollectionRepository
     private let fileStore: FileStore
     private let defaults = UserDefaults.standard
 
-    private(set) var items: [BookListItem] = []
+    /// nil = top-level library.
+    let collectionId: String?
+
+    private(set) var allItems: [BookListItem] = []
+    private(set) var collections: [CollectionListItem] = []
     private(set) var importPhase: ImportPhase?
     var importErrorMessage: String?
 
@@ -26,22 +34,31 @@ final class LibraryViewModel {
         didSet { defaults.set(sortAscending, forKey: "library.sortAscending") }
     }
 
+    /// Books scoped to this view (loose books at top level, members inside a collection).
     var sortedItems: [BookListItem] {
+        let scoped = allItems.filter { $0.book.collectionId == collectionId }
         let sorted: [BookListItem]
         switch sortField {
         case .name:
-            sorted = items.sorted {
+            sorted = scoped.sorted {
                 $0.book.title.localizedStandardCompare($1.book.title) == .orderedAscending
             }
         case .dateAdded:
-            sorted = items.sorted { $0.book.importedAt < $1.book.importedAt }
+            sorted = scoped.sorted { $0.book.importedAt < $1.book.importedAt }
         }
         return sortAscending ? sorted : sorted.reversed()
     }
 
-    init(repository: BookRepository, fileStore: FileStore) {
+    init(
+        repository: BookRepository,
+        collectionRepository: CollectionRepository,
+        fileStore: FileStore,
+        collectionId: String? = nil
+    ) {
         self.repository = repository
+        self.collectionRepository = collectionRepository
         self.fileStore = fileStore
+        self.collectionId = collectionId
         sortField = defaults.string(forKey: "library.sortField")
             .flatMap(LibrarySortField.init(rawValue:)) ?? .dateAdded
         sortAscending = defaults.object(forKey: "library.sortAscending") as? Bool ?? false
@@ -51,16 +68,33 @@ final class LibraryViewModel {
         item.book.coverPath.map(fileStore.url(for:))
     }
 
+    func coverURL(forPath path: String) -> URL {
+        fileStore.url(for: path)
+    }
+
     /// Runs until cancelled; call from `.task`.
-    func observe() async {
+    func observeBooks() async {
         do {
             for try await items in repository.observeBooks() {
-                self.items = items
+                allItems = items
             }
         } catch {
             importErrorMessage = "Library observation failed: \(error.localizedDescription)"
         }
     }
+
+    /// Runs until cancelled; call from `.task`.
+    func observeCollections() async {
+        do {
+            for try await items in collectionRepository.observeCollections() {
+                collections = items
+            }
+        } catch {
+            importErrorMessage = "Collections observation failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Import / delete
 
     func importBook(from pickedURL: URL) async {
         guard importPhase == nil else { return }
@@ -69,7 +103,7 @@ final class LibraryViewModel {
         do {
             let scoped = pickedURL.startAccessingSecurityScopedResource()
             defer { if scoped { pickedURL.stopAccessingSecurityScopedResource() } }
-            try await repository.importBook(from: pickedURL) { phase in
+            try await repository.importBook(from: pickedURL, collectionId: collectionId) { phase in
                 Task { @MainActor [weak self] in self?.importPhase = phase }
             }
         } catch {
@@ -82,6 +116,95 @@ final class LibraryViewModel {
             try await repository.delete(bookId: bookId)
         } catch {
             importErrorMessage = "Delete failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Collections
+
+    func createCollection(named name: String) async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try await collectionRepository.create(name: trimmed)
+        } catch {
+            importErrorMessage = "Could not create collection: \(error.localizedDescription)"
+        }
+    }
+
+    func addBook(bookId: String, toCollection collectionId: String) async {
+        do {
+            try await collectionRepository.addBook(bookId: bookId, to: collectionId)
+        } catch {
+            importErrorMessage = "Could not add to collection: \(error.localizedDescription)"
+        }
+    }
+
+    func addBook(bookId: String, toNewCollectionNamed name: String) async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            let collection = try await collectionRepository.create(name: trimmed)
+            try await collectionRepository.addBook(bookId: bookId, to: collection.id)
+        } catch {
+            importErrorMessage = "Could not add to collection: \(error.localizedDescription)"
+        }
+    }
+
+    func removeBookFromCollection(bookId: String) async {
+        do {
+            try await collectionRepository.removeBook(bookId: bookId)
+        } catch {
+            importErrorMessage = "Could not remove from collection: \(error.localizedDescription)"
+        }
+    }
+
+    /// Deletes this view's collection. `deleteBooks` also deletes every book in
+    /// it (files included); otherwise books move back to the top level.
+    /// `onBookDeleted` lets the caller unload a deleted book from the player.
+    func deleteCollection(deleteBooks: Bool, onBookDeleted: (String) -> Void) async {
+        guard let collectionId else { return }
+        do {
+            if deleteBooks {
+                for bookId in try await collectionRepository.bookIds(in: collectionId) {
+                    onBookDeleted(bookId)
+                    try await repository.delete(bookId: bookId)
+                }
+            }
+            try await collectionRepository.delete(collectionId: collectionId)
+        } catch {
+            importErrorMessage = "Could not delete collection: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Companions
+
+    func attachEpub(bookId: String, from pickedURL: URL) async {
+        await attachCompanion(pickedURL) {
+            try await self.repository.attachEpub(bookId: bookId, from: $0)
+        }
+    }
+
+    func attachSync(bookId: String, from pickedURL: URL) async {
+        await attachCompanion(pickedURL) {
+            try await self.repository.attachSync(bookId: bookId, from: $0)
+        }
+    }
+
+    func detachEpub(bookId: String) async {
+        try? await repository.detachEpub(bookId: bookId)
+    }
+
+    func detachSync(bookId: String) async {
+        try? await repository.detachSync(bookId: bookId)
+    }
+
+    private func attachCompanion(_ pickedURL: URL, attach: (URL) async throws -> Void) async {
+        do {
+            let scoped = pickedURL.startAccessingSecurityScopedResource()
+            defer { if scoped { pickedURL.stopAccessingSecurityScopedResource() } }
+            try await attach(pickedURL)
+        } catch {
+            importErrorMessage = "Could not attach file: \(error.localizedDescription)"
         }
     }
 }

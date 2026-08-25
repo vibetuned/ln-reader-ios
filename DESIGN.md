@@ -106,6 +106,36 @@ needs no service boundary: the `audio` background mode plus an active
 - The mini-player reads the same engine directly (no separate state holder,
   like Android's controller-reading MiniPlayer).
 
+## Sleep timer
+
+`SleepTimerController` drives playback through the same `PlayerEngine` the UI
+uses (like Android's controller sharing the MediaController). Time mode counts
+elapsed *play* time on a 0.5 s tick — pausing freezes it. Chapter mode computes
+a book-absolute target (`ChapterLocator` end of the Nth chapter from arming)
+and fires when the position crosses it. Fade is a linear ramp on
+`AVPlayer.volume` over the configured tail. On fire: pause, restore volume,
+`UNUserNotificationCenter` notification with Postpone / Dismiss actions, and
+CoreMotion shake-to-postpone (user acceleration > 1.3 g, 1.2 s cooldown),
+armed only while the expired state is pending.
+
+## Image viewer
+
+Viewer tab shows the explicitly requested book (`AppNavigation.viewerBookId`,
+set by the detail sheet / player toolbar) or falls back to the playing book;
+leaving the tab clears the explicit target — mirroring Android's optional
+route arg. Full-screen pager is a `TabView(.page)` of `UIScrollView`-backed
+zoomable images (pinch to 5×, double-tap toggle); paging swipes win only at
+1× zoom, which UIScrollView gives for free.
+
+## Collections
+
+Same model as Android: nullable `book.collectionId`, no nesting. The FK is
+`ON DELETE SET NULL`, so dropping a collection row moves its books back to the
+top level in one statement; "delete the books too" walks the members through
+`BookRepository.delete` first (file cleanup lives there). Tile art is a 2×2
+cover shelf (simplified from Android's overlapping 3×3). Per-collection
+manual sort is not ported yet.
+
 ## Signing / distribution
 
 - Automatic signing; team is selected in Xcode (or `DEVELOPMENT_TEAM` in

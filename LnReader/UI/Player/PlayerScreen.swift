@@ -3,6 +3,7 @@ import LnReaderCore
 
 struct PlayerScreen: View {
     @Environment(PlayerEngine.self) private var engine
+    @Environment(AppNavigation.self) private var navigation
 
     var body: some View {
         NavigationStack {
@@ -19,6 +20,17 @@ struct PlayerScreen: View {
             }
             .navigationTitle("Player")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if let book = engine.book {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            navigation.showImages(bookId: book.id)
+                        } label: {
+                            Image(systemName: "photo.on.rectangle")
+                        }
+                    }
+                }
+            }
         }
     }
 }

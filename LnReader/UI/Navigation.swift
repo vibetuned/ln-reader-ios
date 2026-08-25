@@ -10,4 +10,11 @@ enum RootTab: Hashable {
 @Observable
 final class AppNavigation {
     var selectedTab: RootTab = .library
+    /// Explicit viewer target (detail sheet → "View images"); nil = the playing book.
+    var viewerBookId: String?
+
+    func showImages(bookId: String?) {
+        viewerBookId = bookId
+        selectedTab = .images
+    }
 }

@@ -151,6 +151,11 @@ final class PlayerEngine {
         }
     }
 
+    /// 0…1, used by the sleep timer's fade-out.
+    func setVolume(_ volume: Float) {
+        player.volume = min(max(0, volume), 1)
+    }
+
     func setRate(_ newRate: Double) {
         rate = newRate
         if isPlaying { player.rate = Float(newRate) }

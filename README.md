@@ -55,8 +55,15 @@ swift run M4bDump <file.m4b>  # dump parsed metadata/chapters of a real m4b
       chapter-relative scrubber with whole-book strip, chapter list, ±10/30 s
       and chapter skips, 5 s position auto-save, resume-on-launch (paused),
       mini-player on non-player tabs
-- [ ] Collections
-- [ ] Player (AVFoundation, background audio, lock-screen controls)
-- [ ] Sleep timer
-- [ ] Image viewer
+- [x] Collections — folder tiles with cover shelves, collection view (import
+      into, delete with move-back or delete-books), add/remove from the
+      detail sheet
+- [x] Sleep timer — time mode (counts play time, pause freezes) and chapter
+      mode, volume fade-out, expiry notification with Postpone/Dismiss,
+      shake-to-postpone
+- [x] Image viewer — embedded-image grid, full-screen pager with pinch zoom
+      (5×), double-tap zoom, swipe between images
+- [x] Companions — attach/detach EPUB + sync manifest from the detail sheet
 - [ ] EPUB reader + audio-synced highlighting
+- [ ] Playback speed persistence, per-collection manual sort (Android parity
+      gaps)
