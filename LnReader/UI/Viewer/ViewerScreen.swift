@@ -77,21 +77,24 @@ private struct ViewerThumbnail: View {
     @State private var image: UIImage?
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(.quaternary)
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
+        // Overlay keeps wide illustrations (two-page spreads) from inflating
+        // their grid cell; scaledFit inside the fixed 2:3 tile shows the whole
+        // image, letterboxed on the quaternary backdrop.
+        RoundedRectangle(cornerRadius: 8)
+            .fill(.quaternary)
+            .aspectRatio(2 / 3, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                }
             }
-        }
-        .aspectRatio(2 / 3, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .task(id: url) {
-            image = await Task.detached(priority: .utility) {
-                UIImage(contentsOfFile: url.path)
-            }.value
-        }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .task(id: url) {
+                image = await Task.detached(priority: .utility) {
+                    UIImage(contentsOfFile: url.path)
+                }.value
+            }
     }
 }

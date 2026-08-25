@@ -359,25 +359,28 @@ struct CoverImage: View {
     private var displayed: UIImage? { image ?? loaded }
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(.quaternary)
-            if let displayed {
-                Image(uiImage: displayed)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Image(systemName: "headphones")
-                    .font(.largeTitle)
-                    .foregroundStyle(.secondary)
+        // The image lives in an overlay so its natural size can never inflate
+        // the layout (scaledToFill reports oversize for wide images).
+        RoundedRectangle(cornerRadius: 10)
+            .fill(.quaternary)
+            .overlay {
+                if let displayed {
+                    Image(uiImage: displayed)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "headphones")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                }
             }
-        }
-        .task(id: url) {
-            guard image == nil, let url else { return }
-            loaded = await Task.detached(priority: .utility) {
-                UIImage(contentsOfFile: url.path)
-            }.value
-        }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .task(id: url) {
+                guard image == nil, let url else { return }
+                loaded = await Task.detached(priority: .utility) {
+                    UIImage(contentsOfFile: url.path)
+                }.value
+            }
     }
 }
 
