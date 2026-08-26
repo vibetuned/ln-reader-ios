@@ -58,6 +58,8 @@ swift run M4bDump <file.m4b>  # dump parsed metadata/chapters of a real m4b
 - [x] Collections — folder tiles with cover shelves, collection view (import
       into, delete with move-back or delete-books), add/remove from the
       detail sheet
+- [x] Continue the collection — when a collected book finishes, a prompt
+      offers the next / previous book by cover, over any screen
 - [x] Sleep timer — time mode (counts play time, pause freezes) and chapter
       mode, volume fade-out, expiry notification with Postpone/Dismiss,
       shake-to-postpone

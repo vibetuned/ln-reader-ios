@@ -72,6 +72,12 @@ public final class BookRepository: Sendable {
             .values(in: database.writer)
     }
 
+    public func books(inCollection collectionId: String) async throws -> [Book] {
+        try await database.writer.read { db in
+            try Book.filter(Column("collectionId") == collectionId).fetchAll(db)
+        }
+    }
+
     public func detail(bookId: String) async throws -> BookDetail? {
         try await database.writer.read { db in
             guard let book = try Book.fetchOne(db, key: bookId) else { return nil }

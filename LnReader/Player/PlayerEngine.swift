@@ -25,6 +25,10 @@ final class PlayerEngine {
     private(set) var positionMs: Int64 = 0
     private(set) var rate: Double = 1.0
 
+    /// Fired on a natural end of book (playback actually reached the end —
+    /// never on a paused restore-at-end). Drives collection advancing.
+    var onBookFinished: ((Book) -> Void)?
+
     var locator: ChapterLocator {
         ChapterLocator(chapters: chapters, bookDurationMs: book?.durationMs ?? 0)
     }
@@ -232,6 +236,9 @@ final class PlayerEngine {
                 if let duration = self.book?.durationMs { self.positionMs = duration }
                 Task { await self.savePosition() }
                 self.updateNowPlaying()
+                if let finished = self.book {
+                    self.onBookFinished?(finished)
+                }
             }
         }
     }

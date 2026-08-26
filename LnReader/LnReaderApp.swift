@@ -1,10 +1,12 @@
 import SwiftUI
+import LnReaderCore
 
 @main
 struct LnReaderApp: App {
     private let container: AppContainer
     @State private var engine: PlayerEngine
     @State private var sleepTimer: SleepTimerController
+    @State private var collectionAdvance: CollectionAdvanceController
     @State private var navigation = AppNavigation()
 
     init() {
@@ -17,6 +19,11 @@ struct LnReaderApp: App {
         )
         _engine = State(initialValue: engine)
         _sleepTimer = State(initialValue: SleepTimerController(engine: engine))
+        _collectionAdvance = State(initialValue: CollectionAdvanceController(
+            engine: engine,
+            bookRepository: container.bookRepository,
+            fileStore: container.fileStore
+        ))
     }
 
     var body: some Scene {
@@ -25,6 +32,7 @@ struct LnReaderApp: App {
                 .environment(\.appContainer, container)
                 .environment(engine)
                 .environment(sleepTimer)
+                .environment(collectionAdvance)
                 .environment(navigation)
                 .task { await onLaunch() }
         }
@@ -67,33 +75,53 @@ struct LnReaderApp: App {
     #if DEBUG
     /// Dev hook: `simctl launch booted com.vibetuned.lnreader -autoImport <path>`
     /// imports a book without driving the file picker (simulator can read host
-    /// paths). Add `-autoPlay` to start playing it immediately.
+    /// paths); the flag may repeat to import several books. Add `-autoPlay` to
+    /// start playing the first one, and `-testCollectionAdvance` to put all
+    /// imported books in a collection and seek near the end of the first.
     private func autoImportIfRequested() async {
         let arguments = ProcessInfo.processInfo.arguments
-        guard let flag = arguments.firstIndex(of: "-autoImport"), flag + 1 < arguments.count else { return }
-        do {
-            let sourceURL = URL(fileURLWithPath: arguments[flag + 1])
-            let book = try await container.bookRepository.importBook(from: sourceURL)
-            print("autoImport: imported \(book.title)")
-            // Attach sibling companions when they sit next to the m4b
-            // (ln-vox output layout: book.m4b + *.epub + sync_manifest.json).
-            let siblings = (try? FileManager.default.contentsOfDirectory(
-                at: sourceURL.deletingLastPathComponent(), includingPropertiesForKeys: nil)) ?? []
-            if let epub = siblings.first(where: { $0.pathExtension == "epub" }) {
-                try await container.bookRepository.attachEpub(bookId: book.id, from: epub)
-                print("autoImport: attached \(epub.lastPathComponent)")
+        var imported: [Book] = []
+        for (index, argument) in arguments.enumerated() where argument == "-autoImport" {
+            guard index + 1 < arguments.count else { break }
+            do {
+                let sourceURL = URL(fileURLWithPath: arguments[index + 1])
+                let book = try await container.bookRepository.importBook(from: sourceURL)
+                print("autoImport: imported \(book.title)")
+                // Attach sibling companions when they sit next to the m4b
+                // (ln-vox output layout: book.m4b + *.epub + sync_manifest.json).
+                let siblings = (try? FileManager.default.contentsOfDirectory(
+                    at: sourceURL.deletingLastPathComponent(), includingPropertiesForKeys: nil)) ?? []
+                if let epub = siblings.first(where: { $0.pathExtension == "epub" }) {
+                    try await container.bookRepository.attachEpub(bookId: book.id, from: epub)
+                }
+                if let sync = siblings.first(where: { $0.lastPathComponent == "sync_manifest.json" }) {
+                    try await container.bookRepository.attachSync(bookId: book.id, from: sync)
+                }
+                imported.append(book)
+            } catch {
+                print("autoImport failed: \(error)")
             }
-            if let sync = siblings.first(where: { $0.lastPathComponent == "sync_manifest.json" }) {
-                try await container.bookRepository.attachSync(bookId: book.id, from: sync)
-                print("autoImport: attached \(sync.lastPathComponent)")
+        }
+        guard let first = imported.first else { return }
+
+        if arguments.contains("-testCollectionAdvance") {
+            if let collection = try? await container.collectionRepository.create(name: "Test Shelf") {
+                for book in imported {
+                    try? await container.collectionRepository.addBook(bookId: book.id, to: collection.id)
+                }
+                print("autoImport: created Test Shelf with \(imported.count) books")
             }
-            if arguments.contains("-autoPlay") {
-                container.lastBookRestoreHandled = true
-                await engine.open(bookId: book.id, autoPlay: true)
-                navigation.selectedTab = .player
-            }
-        } catch {
-            print("autoImport failed: \(error)")
+            container.lastBookRestoreHandled = true
+            await engine.open(bookId: first.id, autoPlay: true)
+            navigation.selectedTab = .player
+            engine.seek(toMs: max(0, first.durationMs - 20_000))
+            return
+        }
+
+        if arguments.contains("-autoPlay") {
+            container.lastBookRestoreHandled = true
+            await engine.open(bookId: first.id, autoPlay: true)
+            navigation.selectedTab = .player
         }
     }
     #endif

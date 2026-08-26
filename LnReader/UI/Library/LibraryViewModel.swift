@@ -37,10 +37,10 @@ final class LibraryViewModel {
     // Sort field/direction are persisted app-wide, like Android's
     // LibraryPreferences; manual mode + arranged order are per-collection.
     var sortField: LibrarySortField {
-        didSet { defaults.set(sortField.rawValue, forKey: "library.sortField") }
+        didSet { defaults.set(sortField.rawValue, forKey: LibraryPrefs.sortFieldKey) }
     }
     var sortAscending: Bool {
-        didSet { defaults.set(sortAscending, forKey: "library.sortAscending") }
+        didSet { defaults.set(sortAscending, forKey: LibraryPrefs.sortAscendingKey) }
     }
     private(set) var manualMode: Bool
     private var manualOrder: [String]
@@ -112,12 +112,12 @@ final class LibraryViewModel {
     private func setManualMode(_ enabled: Bool) {
         manualMode = enabled
         guard let collectionId else { return }
-        defaults.set(enabled, forKey: "library.collection.\(collectionId).manual")
+        defaults.set(enabled, forKey: LibraryPrefs.manualModeKey(collectionId))
     }
 
     private func persistManualOrder() {
         guard let collectionId else { return }
-        defaults.set(manualOrder, forKey: "library.collection.\(collectionId).order")
+        defaults.set(manualOrder, forKey: LibraryPrefs.manualOrderKey(collectionId))
     }
 
     init(
@@ -130,12 +130,12 @@ final class LibraryViewModel {
         self.collectionRepository = collectionRepository
         self.fileStore = fileStore
         self.collectionId = collectionId
-        sortField = defaults.string(forKey: "library.sortField")
+        sortField = defaults.string(forKey: LibraryPrefs.sortFieldKey)
             .flatMap(LibrarySortField.init(rawValue:)) ?? .dateAdded
-        sortAscending = defaults.object(forKey: "library.sortAscending") as? Bool ?? false
+        sortAscending = defaults.object(forKey: LibraryPrefs.sortAscendingKey) as? Bool ?? false
         if let collectionId {
-            manualMode = defaults.bool(forKey: "library.collection.\(collectionId).manual")
-            manualOrder = defaults.stringArray(forKey: "library.collection.\(collectionId).order") ?? []
+            manualMode = defaults.bool(forKey: LibraryPrefs.manualModeKey(collectionId))
+            manualOrder = defaults.stringArray(forKey: LibraryPrefs.manualOrderKey(collectionId)) ?? []
         } else {
             manualMode = false
             manualOrder = []

@@ -180,6 +180,20 @@ unrelated and harmless). Rules:
   is a Button + SpeedSheet (Android parity) since it sat in a crowded bar.
 - `PlayerToolbarUITests` guards this on the 11-inch iPad.
 
+## Collection advancing
+
+`CollectionAdvanceController` mirrors Android's: it hangs off
+`PlayerEngine.onBookFinished` (fired only on a natural end — AVPlayer's
+did-play-to-end never fires on a paused restore-at-end, so Android's
+`playWhenReady` guard is implicit). If the finished book is in a collection it
+orders the members with `LibraryPrefs.orderedBooks` — the same
+sort/manual-order the library shows — and publishes a `CollectionEndPrompt`
+with the previous/next books. `ContinueCollectionHost` presents the sheet
+globally: attached to the tab root and to the reader's full-screen cover,
+with only one active at a time (a sheet can't present from a context hidden
+under a cover). Tapping a cover opens that book playing; the finished-margin
+guard already restarts finished books from zero.
+
 ## Sort & speed persistence
 
 - Playback speed persists app-wide (`player.rate` in UserDefaults), applied
