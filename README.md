@@ -70,4 +70,6 @@ swift run M4bDump <file.m4b>  # dump parsed metadata/chapters of a real m4b
 - [x] Playback speed persisted across launches; per-collection manual sort
       with a drag-to-reorder sheet
 - [x] Sleep-timer drawer + speed control in the player top bar
-- [ ] App Store housekeeping (icon variants, privacy manifest, listing)
+- [x] PrivacyInfo.xcprivacy (no tracking, no collected data); joint privacy
+      policy + iOS docs live at https://ln.vibetuned.com
+- [ ] App Store Connect listing (screenshots, description, review notes)
