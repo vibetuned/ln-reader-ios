@@ -164,15 +164,21 @@ manual sort is not ported yet.
 - The reader injects `-apple-system` (San Francisco) as the body font —
   WebKit defaults to Times when the EPUB doesn't specify one.
 
-## Toolbar rule: no Menu in overflow-prone toolbars
+## Toolbar rule: never rely on UIKit's auto-overflow
 
-A SwiftUI `Menu` among toolbar items breaks the system's "…" overflow menu on
-iPadOS — tapping the ellipsis does nothing (with a
-`updateVisibleMenuWithBlock` console warning). Any toolbar that can collapse
-(4+ items, narrow windows) must use plain Buttons that present sheets
-instead. This is why playback speed is a Button + SpeedSheet (which is also
-Android parity) rather than an inline Menu. The Library's sort/add Menus are
-fine only because those toolbars never exceed two items per side.
+UIKit's automatic toolbar overflow ("…", `OverflowBarButtonItem`) **never
+opens** on iPadOS 26 in this app — verified by UI test with a hierarchy dump:
+the tap lands, no menu appears (regardless of whether the collapsed items are
+Buttons or Menus; the `updateVisibleMenuWithBlock` console noise is
+unrelated and harmless). Rules:
+
+- Toolbars must never collapse implicitly: at most ~3 `topBarTrailing` items.
+- Items that may not fit go in `ToolbarItem(placement: .secondaryAction)`
+  with full `Label`s — SwiftUI renders its own ellipsis menu, which works
+  (player: Read / View images; reader: Smaller/Larger text).
+- Directly visible `Menu`s work fine (Library sort/add) — but playback speed
+  is a Button + SpeedSheet (Android parity) since it sat in a crowded bar.
+- `PlayerToolbarUITests` guards this on the 11-inch iPad.
 
 ## Sort & speed persistence
 

@@ -45,20 +45,25 @@ struct PlayerScreen: View {
                             Image(systemName: "moon.zzz")
                         }
                         .accessibilityLabel("Sleep timer")
-                        if book.epubPath != nil {
+                    }
+                    // secondaryAction: SwiftUI inlines these when space allows
+                    // and folds them into its own working ellipsis menu when
+                    // not — UIKit's auto-overflow menu never opens (iPadOS bug).
+                    if book.epubPath != nil {
+                        ToolbarItem(placement: .secondaryAction) {
                             Button {
                                 navigation.showReader(bookId: book.id)
                             } label: {
-                                Image(systemName: "book")
+                                Label("Read", systemImage: "book")
                             }
-                            .accessibilityLabel("Read")
                         }
+                    }
+                    ToolbarItem(placement: .secondaryAction) {
                         Button {
                             navigation.showImages(bookId: book.id)
                         } label: {
-                            Image(systemName: "photo.on.rectangle")
+                            Label("View images", systemImage: "photo.on.rectangle")
                         }
-                        .accessibilityLabel("Images")
                     }
                 }
             }
