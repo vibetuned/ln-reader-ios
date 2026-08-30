@@ -180,6 +180,12 @@ private struct PlayerContent: View {
 
     // While dragging, the scrubber drives this book-absolute preview position.
     @State private var scrubMs: Int64?
+    /// The chapter window FROZEN for the duration of a drag. Without it, a
+    /// drag to the chapter edge recomputes the window as the next chapter,
+    /// whose scrubber max immediately rolls the preview into the one after —
+    /// cascading to the end of the book (like Android, the window is fixed
+    /// while dragging and the seek happens once, on release).
+    @State private var scrubWindow: ChapterWindow?
     @State private var showChapters = false
     /// Sync-manifest images that have a matching embedded m4b image (matched
     /// by ordinal, like Android) — they render as tappable scrubber markers.
@@ -192,7 +198,9 @@ private struct PlayerContent: View {
     }
 
     private var displayMs: Int64 { scrubMs ?? engine.positionMs }
-    private var chapter: ChapterWindow? { engine.locator.window(atMs: displayMs) }
+    private var chapter: ChapterWindow? {
+        scrubWindow ?? engine.locator.window(atMs: displayMs)
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -293,26 +301,35 @@ private struct PlayerContent: View {
 
         return VStack(spacing: 6) {
             markerRow(windowStart: windowStart, windowDuration: windowDuration)
-            Slider(
-                value: Binding(
-                    get: { Double(localMs) },
-                    set: { scrubMs = windowStart + Int64($0) }
-                ),
-                in: 0 ... Double(windowDuration)
-            ) { editing in
-                if !editing, let target = scrubMs {
-                    engine.seek(toMs: target)
+            ChapterScrubber(
+                value: Double(min(max(0, localMs), windowDuration)),
+                duration: Double(windowDuration),
+                onScrubChanged: { value in
+                    // Freeze the window on the first touch of a drag, so a
+                    // preview at the chapter edge can't roll into the next
+                    // chapter and cascade.
+                    if scrubWindow == nil {
+                        scrubWindow = engine.locator.window(atMs: engine.positionMs)
+                    }
+                    let start = scrubWindow?.startMs ?? windowStart
+                    scrubMs = start + Int64(value)
+                },
+                onScrubEnded: { value in
+                    let start = scrubWindow?.startMs ?? windowStart
+                    engine.seek(toMs: start + Int64(value))
                     scrubMs = nil
+                    scrubWindow = nil
                 }
-            }
+            )
             HStack {
-                Text(formatMs(localMs))
+                Text(formatMs(min(max(0, localMs), windowDuration)))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                 Spacer()
                 bookStrip
                 Spacer()
-                Text(formatMs(windowDuration))
+                // Remaining in the chapter, counting down with the drag (Android).
+                Text("-\(formatMs(max(0, windowDuration - localMs)))")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -406,8 +423,9 @@ private struct PlayerContent: View {
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
+    /// Minutes rounded up, like Android — it only reads 0 min at the very end.
     private func formatRemaining(_ ms: Int64) -> String {
-        let minutes = ms / 60_000
+        let minutes = (max(0, ms) + 59_999) / 60_000
         return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(minutes) min"
     }
 }

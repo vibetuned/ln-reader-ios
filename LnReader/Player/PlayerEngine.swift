@@ -239,7 +239,11 @@ final class PlayerEngine {
 
     func seek(toMs targetMs: Int64) {
         guard let book else { return }
-        let clamped = min(max(0, targetMs), book.durationMs)
+        // Never seek to the exact end: sitting there fires did-play-to-end on
+        // every play, storming the finished flow. Playing the last moment
+        // naturally still ends the book.
+        let upperBound = book.durationMs > 1000 ? book.durationMs - 500 : book.durationMs
+        let clamped = min(max(0, targetMs), upperBound)
         positionMs = clamped
         if let remote {
             remote.seek(toMs: clamped)
