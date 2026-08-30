@@ -42,6 +42,32 @@ struct LnReaderApp: App {
                 .environment(cast)
                 .environment(navigation)
                 .task { await onLaunch() }
+                .onOpenURL { url in
+                    Task { await handleIncomingFile(url) }
+                }
+        }
+    }
+
+    /// Files arriving via AirDrop / "Open in…": an .m4b imports straight into
+    /// the library; an .epub or sync .json waits for the user to pick the book
+    /// to attach it to (sheet hosted by the Library).
+    private func handleIncomingFile(_ url: URL) async {
+        navigation.selectedTab = .library
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        switch url.pathExtension.lowercased() {
+        case "m4b", "m4a":
+            do {
+                let book = try await container.bookRepository.importBook(from: url)
+                print("openURL: imported \(book.title)")
+                try? FileManager.default.removeItem(at: url) // Inbox copy
+            } catch {
+                print("openURL import failed: \(error)")
+            }
+        case "epub", "json":
+            navigation.pendingAttachment = url
+        default:
+            break
         }
     }
 

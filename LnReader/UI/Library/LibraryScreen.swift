@@ -83,12 +83,14 @@ private struct LibraryContent: View {
         case detail(BookListItem)
         case newCollection
         case reorder
+        case attachCompanion(URL)
 
         var id: String {
             switch self {
             case .detail(let item): item.id
             case .newCollection: "new-collection"
             case .reorder: "reorder"
+            case .attachCompanion(let url): "attach-\(url.absoluteString)"
             }
         }
     }
@@ -152,6 +154,21 @@ private struct LibraryContent: View {
                 }
             case .reorder:
                 ReorderSheet(model: model)
+            case .attachCompanion(let url):
+                AttachCompanionSheet(url: url, model: model)
+            }
+        }
+        // Companions arriving via AirDrop / "Open in…" (top level only).
+        .onChange(of: navigation.pendingAttachment) { _, url in
+            if let url, collectionName == nil {
+                navigation.pendingAttachment = nil
+                activeSheet = .attachCompanion(url)
+            }
+        }
+        .onAppear {
+            if let url = navigation.pendingAttachment, collectionName == nil {
+                navigation.pendingAttachment = nil
+                activeSheet = .attachCompanion(url)
             }
         }
         .confirmationDialog(

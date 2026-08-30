@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 
 enum RootTab: Hashable {
@@ -14,6 +15,9 @@ final class AppNavigation {
     var viewerBookId: String?
     /// Book whose EPUB the full-screen reader shows; nil = reader closed.
     var readerBookId: String?
+    /// An .epub / sync .json that arrived via AirDrop / "Open in…" and waits
+    /// for the user to pick which book to attach it to.
+    var pendingAttachment: URL?
 
     func showImages(bookId: String?) {
         viewerBookId = bookId

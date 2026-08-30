@@ -39,6 +39,26 @@ targets:
         NSBonjourServices:
           - _googlecast._tcp
           - _CC1AD845._googlecast._tcp
+        # Receive .m4b / .epub via AirDrop and "Open in…" — otherwise iMovie
+        # and Books capture them and Save-to-Files is never offered.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: M4B Audiobook
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.vibetuned.lnreader.m4b
+          - CFBundleTypeName: EPUB Book
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - org.idpf.epub-container
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.vibetuned.lnreader.m4b
+            UTTypeDescription: M4B Audiobook
+            UTTypeConformsTo:
+              - public.mpeg-4-audio
+              - public.audio
+            UTTypeTagSpecification:
+              public.filename-extension: [m4b]
+              public.mime-type: [audio/mp4]
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
