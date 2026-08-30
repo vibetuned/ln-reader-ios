@@ -302,10 +302,13 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
             document.head.appendChild(s);
           }
           s.textContent = \(jsString(css));
-          document.documentElement.style.webkitTextSizeAdjust = '\(textZoom)%';
         })();
         """
         webView.evaluateJavaScript(js)
+        // -webkit-text-size-adjust is an iPhone-Safari-only feature (a silent
+        // no-op in WKWebView on iPad); pageZoom is the native equivalent of
+        // Android's settings.textZoom.
+        webView.pageZoom = CGFloat(textZoom) / 100
         webView.backgroundColor = darkMode ? UIColor(white: 0.07, alpha: 1) : .systemBackground
         webView.scrollView.backgroundColor = webView.backgroundColor
     }
