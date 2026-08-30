@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 enum RootTab: Hashable {
-    case library, player, images, timer, settings
+    case library, player, images, timer
 }
 
 /// Process-scoped navigation state, so non-UI code (mini-player taps,

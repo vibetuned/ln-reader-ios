@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// Top-level tab layout, mirroring the Android app's bottom navigation:
-/// Library, Player, Images, Timer, Settings. A mini-player floats over every
+/// Library, Player, Images, Timer. (No Settings tab: Android's only real
+/// setting is the download location, and iOS always copies imports into the
+/// app container.) A mini-player floats over every
 /// tab except the full player while a book is loaded.
 struct RootView: View {
     @Environment(AppNavigation.self) private var navigation
@@ -23,9 +25,6 @@ struct RootView: View {
             TimerScreen()
                 .tabItem { Label("Timer", systemImage: "moon.zzz") }
                 .tag(RootTab.timer)
-            SettingsScreen()
-                .tabItem { Label("Settings", systemImage: "gearshape") }
-                .tag(RootTab.settings)
         }
         .overlay(alignment: .bottom) {
             if engine.book != nil, navigation.selectedTab != .player {

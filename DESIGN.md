@@ -26,7 +26,14 @@ LnReader/                      app target (UI + platform integrations)
 ├── LnReaderApp.swift          @main, owns the AppContainer
 ├── AppContainer.swift         lazy process-scoped singletons (mirrors Android)
 └── UI/                        package-by-feature, mirrors Android ui/
-    ├── Library/  Player/  Viewer/  Timer/  Settings/  Common/
+    ├── Library/  Player/  Viewer/  Timer/  Reader/  Common/
+```
+
+No Settings tab (unlike Android): its only real setting there is the download
+location, which doesn't exist on iOS — imports are always copied into the app
+container. Reader/player preferences live where they're used (toolbars).
+
+```
 LnReaderCore/                  Swift package — pure logic, no UIKit/SwiftUI
 ├── M4b/                       M4bSource, AtomReader, M4bParser
 └── Companion/                 SyncManifest (EpubBook to follow)
