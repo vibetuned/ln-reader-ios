@@ -56,6 +56,17 @@ final class ReaderZoomUITests: XCTestCase {
         let before = sample.frame.height
         XCTAssertGreaterThan(before, 0)
 
+        // Also track a SHORT single-line text: its WIDTH is glyph advance —
+        // paragraph height alone grows from line-box scaling even when glyphs
+        // don't (the historic iPad bug this test must catch).
+        let shortQuery = app.webViews.staticTexts.matching(
+            NSPredicate(format: "label MATCHES %@", "(?s).{5,45}"))
+        let shortLabel = shortQuery.firstMatch.exists ? shortQuery.firstMatch.label : ""
+        let shortWidthBefore = shortLabel.isEmpty
+            ? 0
+            : app.webViews.staticTexts.matching(
+                NSPredicate(format: "label == %@", shortLabel)).firstMatch.frame.width
+
         // A+ is a direct toolbar button now. +10% x4 = at least +40%.
         let larger = app.buttons["Larger text"].firstMatch
         XCTAssertTrue(larger.waitForExistence(timeout: 10), "Larger text button missing")
@@ -74,6 +85,17 @@ final class ReaderZoomUITests: XCTestCase {
             after, before * 1.2,
             "Text did not grow after four Larger-text taps (\(before) -> \(after))"
         )
+        if !shortLabel.isEmpty, shortWidthBefore > 0 {
+            let shortElement = app.webViews.staticTexts.matching(
+                NSPredicate(format: "label == %@", shortLabel)).firstMatch
+            if shortElement.exists {
+                let shortWidthAfter = shortElement.frame.width
+                XCTAssertGreaterThan(
+                    shortWidthAfter, shortWidthBefore * 1.2,
+                    "Glyphs did not scale: short line width \(shortWidthBefore) -> \(shortWidthAfter)"
+                )
+            }
+        }
 
         // And the opposite direction: Smaller must shrink it back down.
         let smaller = app.buttons["Smaller text"].firstMatch

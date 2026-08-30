@@ -13,18 +13,47 @@ public enum EpubError: Error {
 }
 
 public enum EpubReader {
-    private static let markerName = ".lnreader-extracted"
+    // v2: viewport meta injected into extracted pages (stale v1 trees redo).
+    private static let markerName = ".lnreader-extracted-v2"
 
     /// Unzips the EPUB into `directory` once (idempotent via a marker file,
-    /// zip path-traversal guarded by ZipArchive).
+    /// zip path-traversal guarded by ZipArchive) and stamps every page with a
+    /// mobile viewport meta: without one, iPad WKWebView treats the page as
+    /// desktop content and runs text autosizing, which renormalizes glyph
+    /// sizes against the reader's text zoom (spacing scales, letters don't).
+    /// The mode decision is made at parse time, so the meta must be in the file.
     public static func ensureExtracted(epubURL: URL, to directory: URL) throws {
         let marker = directory.appendingPathComponent(markerName)
         if FileManager.default.fileExists(atPath: marker.path) { return }
-        // A partial previous extraction (no marker) is retried from scratch.
+        // A partial or v1 extraction is redone from scratch.
         try? FileManager.default.removeItem(at: directory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try ZipArchive(url: epubURL).extractAll(to: directory)
+        injectViewportMeta(under: directory)
         try Data().write(to: marker)
+    }
+
+    public static let viewportMeta =
+        #"<meta name="viewport" content="width=device-width, initial-scale=1"/>"#
+
+    private static func injectViewportMeta(under directory: URL) {
+        let pageExtensions: Set<String> = ["xhtml", "html", "htm"]
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory, includingPropertiesForKeys: nil) else { return }
+        let headPattern = try! NSRegularExpression(
+            pattern: "<head[^>]*>", options: [.caseInsensitive])
+        for case let fileURL as URL in enumerator {
+            guard pageExtensions.contains(fileURL.pathExtension.lowercased()),
+                  let html = try? String(contentsOf: fileURL, encoding: .utf8),
+                  !html.localizedCaseInsensitiveContains("name=\"viewport\""),
+                  !html.localizedCaseInsensitiveContains("name='viewport'") else { continue }
+            let range = NSRange(location: 0, length: (html as NSString).length)
+            guard let match = headPattern.firstMatch(in: html, range: range) else { continue }
+            let insertAt = match.range.location + match.range.length
+            let patched = (html as NSString).replacingCharacters(
+                in: NSRange(location: insertAt, length: 0), with: viewportMeta)
+            try? patched.write(to: fileURL, atomically: true, encoding: .utf8)
+        }
     }
 
     /// Reads META-INF/container.xml → OPF → ordered spine from an extracted dir.

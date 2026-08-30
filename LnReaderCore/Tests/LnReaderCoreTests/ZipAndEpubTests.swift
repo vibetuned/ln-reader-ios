@@ -147,8 +147,14 @@ final class EpubBookTests: XCTestCase {
             .init(name: "mimetype", content: Data("application/epub+zip".utf8), deflated: false),
             .init(name: "META-INF/container.xml", content: Data(container.utf8), deflated: true),
             .init(name: "OEBPS/content.opf", content: Data(opf.utf8), deflated: true),
-            .init(name: "OEBPS/Text/cover.xhtml", content: Data("<html/>".utf8), deflated: true),
-            .init(name: "OEBPS/Text/chapter 1.xhtml", content: Data("<html/>".utf8), deflated: true),
+            .init(
+                name: "OEBPS/Text/cover.xhtml",
+                content: Data("<html><head><title>c</title></head><body>cover</body></html>".utf8),
+                deflated: true),
+            .init(
+                name: "OEBPS/Text/chapter 1.xhtml",
+                content: Data("<html><head><title>1</title></head><body>one</body></html>".utf8),
+                deflated: true),
             .init(name: "OEBPS/Styles/style.css", content: Data("body{}".utf8), deflated: false),
         ])
     }
@@ -172,6 +178,29 @@ final class EpubBookTests: XCTestCase {
         XCTAssertEqual(book.spine, ["OEBPS/Text/cover.xhtml", "OEBPS/Text/chapter 1.xhtml"])
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: extractionDir.appendingPathComponent("OEBPS/Text/chapter 1.xhtml").path))
+    }
+
+    func testExtractionInjectsViewportMeta() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("epub-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let epubURL = dir.appendingPathComponent("book.epub")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try sampleEpubZip().write(to: epubURL)
+
+        let extractionDir = dir.appendingPathComponent("extracted")
+        try EpubReader.ensureExtracted(epubURL: epubURL, to: extractionDir)
+
+        // Pages get a mobile viewport meta right after <head>: without it,
+        // iPad WKWebView runs text autosizing that defeats the reader's zoom.
+        for page in ["OEBPS/Text/cover.xhtml", "OEBPS/Text/chapter 1.xhtml"] {
+            let html = try String(
+                contentsOf: extractionDir.appendingPathComponent(page), encoding: .utf8)
+            XCTAssertTrue(html.contains(EpubReader.viewportMeta), "viewport meta missing in \(page)")
+            XCTAssertEqual(
+                html.components(separatedBy: "name=\"viewport\"").count, 2,
+                "viewport meta injected more than once in \(page)")
+        }
     }
 
     func testMissingContainerThrows() throws {

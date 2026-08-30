@@ -71,12 +71,42 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
         self.engine = engine
         darkMode = defaults.object(forKey: "reader.darkMode") as? Bool ?? false
         textZoom = defaults.object(forKey: "reader.textZoom") as? Int ?? 100
-        let configuration = WKWebViewConfiguration()
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        let configuration = Self.makeWebViewConfiguration()
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false
         super.init()
         webView.navigationDelegate = self
+    }
+
+    /// Shared by the reader and the zoom regression harness so tests exercise
+    /// the exact production configuration.
+    ///
+    /// iPad WKWebView treats pages without a viewport meta as desktop content
+    /// and runs "idempotent text autosizing" on them, which renormalizes glyph
+    /// sizes against any zoom (line boxes scale, letters don't). Three guards
+    /// keep it off: mobile content mode here, the viewport meta baked into
+    /// every extracted page (EpubReader.injectViewportMeta), and this runtime
+    /// fallback script for pages the baker missed.
+    static func makeWebViewConfiguration() -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.defaultWebpagePreferences.preferredContentMode = .mobile
+        let viewportScript = WKUserScript(
+            source: """
+            (function() {
+              if (!document.querySelector('meta[name="viewport"]')) {
+                var m = document.createElement('meta');
+                m.name = 'viewport';
+                m.content = 'width=device-width, initial-scale=1';
+                (document.head || document.documentElement).appendChild(m);
+              }
+            })();
+            """,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        )
+        configuration.userContentController.addUserScript(viewportScript)
+        return configuration
     }
 
     // MARK: - Loading
@@ -276,9 +306,17 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
 
     // MARK: - JS injection
 
-    private func applyAppearance() {
-        let dataAttr = manifest?.dataAttr ?? "data-beat-id"
-        _ = dataAttr // documented for the highlight selector below
+    /// The reader's injected stylesheet — extracted as a pure function so the
+    /// zoom regression harness can inject the exact production CSS.
+    ///
+    /// Text zoom scales the font cascade at the root, like Android's
+    /// settings.textZoom: EPUB prose is sized in em/rem rooted at html, so a
+    /// root percentage scales the actual glyphs and preserves the book's
+    /// relative type hierarchy. Layout-level zoom (pageZoom / CSS zoom) is
+    /// useless on iPad — text autosizing renormalizes glyphs against it.
+    /// `-webkit-text-size-adjust: 100%` is honored in mobile content mode and
+    /// pins any device autosizing to exactly 1x.
+    static func appearanceCss(textZoom: Int, darkMode: Bool) -> String {
         let darkCss = """
         html, body { background: #121212 !important; color: #e2e2e2 !important; }
         body * { background-color: transparent !important; color: inherit !important; }
@@ -286,20 +324,20 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
         img, svg { opacity: 0.92; }
         """
         let highlightColor = darkMode ? "rgba(255, 214, 79, 0.35)" : "rgba(255, 214, 79, 0.55)"
-        let css = """
+        return """
         /* System font (San Francisco) instead of WebKit's Times default. */
         body { font-family: -apple-system, "Helvetica Neue", sans-serif !important; }
         body * { font-family: inherit !important; }
-        /* iPadOS text autosizing rescales fonts to fight any zoom (images
-           scale, text doesn't — or moves opposite). Kill it, then zoom via
-           CSS zoom, which keeps the layout viewport (and the book's media
-           queries) untouched. */
-        html, body { -webkit-text-size-adjust: none !important; text-size-adjust: none !important; }
-        body { zoom: \(textZoom)% !important; }
+        html { font-size: \(textZoom)% !important; -webkit-text-size-adjust: 100%; }
         \(darkMode ? darkCss : "")
         .lnvox-active { background-color: \(highlightColor) !important; border-radius: 3px; }
         """
-        let js = """
+    }
+
+    /// JS that installs/replaces the reader stylesheet on the loaded page —
+    /// also shared with the zoom regression harness.
+    static func appearanceInjectionJs(css: String) -> String {
+        """
         (function() {
           var s = document.getElementById('lnreader-style');
           if (!s) {
@@ -307,10 +345,14 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
             s.id = 'lnreader-style';
             document.head.appendChild(s);
           }
-          s.textContent = \(jsString(css));
+          s.textContent = \(jsQuote(css));
         })();
         """
-        webView.evaluateJavaScript(js)
+    }
+
+    private func applyAppearance() {
+        let css = Self.appearanceCss(textZoom: textZoom, darkMode: darkMode)
+        webView.evaluateJavaScript(Self.appearanceInjectionJs(css: css))
         webView.backgroundColor = darkMode ? UIColor(white: 0.07, alpha: 1) : .systemBackground
         webView.scrollView.backgroundColor = webView.backgroundColor
     }
