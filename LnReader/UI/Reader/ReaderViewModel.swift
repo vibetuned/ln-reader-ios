@@ -44,6 +44,27 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
     private var activeBeatId: String?
     private var followTask: Task<Void, Never>?
 
+    // MARK: Whole-book search state (mirrors the Android ReaderUiState fields)
+
+    /// The match the WebView should highlight and scroll to once its page loads.
+    struct SearchTarget {
+        let spineIndex: Int
+        let occurrence: Int
+        let jsPattern: String
+    }
+
+    private(set) var searchActive = false
+    var searchQuery = ""
+    private(set) var isSearching = false
+    /// nil = nothing submitted yet; empty = the submitted query had no matches.
+    private(set) var searchResults: [EpubSearchMatch]?
+    /// JS regex for the query the results belong to (the field may have been edited since).
+    private var searchPatternJs: String?
+    var showSearchResults = false
+    /// Index into `searchResults` of the match being viewed, for prev/next stepping.
+    private(set) var searchSelection: Int?
+    private var searchTarget: SearchTarget?
+
     init(repository: BookRepository, fileStore: FileStore, engine: PlayerEngine) {
         self.repository = repository
         self.fileStore = fileStore
@@ -172,6 +193,75 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
             ?? spine.firstIndex { $0.hasSuffix(beat.xhtml) || beat.xhtml.hasSuffix($0) }
     }
 
+    // MARK: - Whole-book search
+
+    func openSearch() {
+        searchActive = true
+        showSearchResults = searchResults != nil
+    }
+
+    func closeSearch() {
+        searchActive = false
+        searchQuery = ""
+        isSearching = false
+        searchResults = nil
+        searchPatternJs = nil
+        showSearchResults = false
+        searchSelection = nil
+        searchTarget = nil
+        webView.evaluateJavaScript(Self.clearSearchJs)
+    }
+
+    func submitSearch() {
+        let query = searchQuery
+        guard let rootDir = extractionDir,
+              let jsPattern = EpubTextSearch.jsPattern(for: query),
+              !spine.isEmpty else { return }
+        // Clearing the target also drops highlights from the previous query.
+        isSearching = true
+        showSearchResults = true
+        searchSelection = nil
+        searchTarget = nil
+        searchPatternJs = jsPattern
+        let paths = spine
+        Task { [weak self] in
+            let matches = await Task.detached(priority: .userInitiated) {
+                EpubTextSearch.search(rootDir: rootDir, spinePaths: paths, query: query)
+            }.value
+            guard let self else { return }
+            // The user may have edited the query and resubmitted while this scan ran.
+            guard self.searchQuery == query else { return }
+            self.isSearching = false
+            self.searchResults = matches
+        }
+    }
+
+    func openSearchResult(_ index: Int) {
+        guard let result = searchResults?.indices.contains(index) == true ? searchResults?[index] : nil,
+              let pattern = searchPatternJs else { return }
+        followEnabled = false // jumping to a match leaves auto-follow, like manual paging
+        showSearchResults = false
+        searchSelection = index
+        searchTarget = SearchTarget(
+            spineIndex: result.spineIndex, occurrence: result.occurrence, jsPattern: pattern)
+        if result.spineIndex != currentIndex {
+            loadPage(result.spineIndex) // highlight applied on didFinish
+        } else {
+            applySearchHighlight()
+        }
+    }
+
+    func stepSearchResult(_ delta: Int) {
+        guard let selection = searchSelection else { return }
+        openSearchResult(selection + delta)
+    }
+
+    private func applySearchHighlight() {
+        guard let target = searchTarget, target.spineIndex == currentIndex else { return }
+        webView.evaluateJavaScript(Self.searchHighlightJs(
+            jsPattern: target.jsPattern, occurrence: target.occurrence))
+    }
+
     // MARK: - WKNavigationDelegate
 
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -180,6 +270,7 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
             if followEnabled, let activeBeatId {
                 highlight(beatId: activeBeatId)
             }
+            applySearchHighlight()
         }
     }
 
@@ -238,7 +329,90 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
 
     /// JSON-encodes a string for safe embedding in evaluateJavaScript source.
     private func jsString(_ value: String) -> String {
+        Self.jsQuote(value)
+    }
+
+    private static func jsQuote(_ value: String) -> String {
         String(data: try! JSONEncoder().encode([value]), encoding: .utf8)!
             .dropFirst().dropLast().description
+    }
+
+    // MARK: - Search JS (ported verbatim from the Android ReaderSearch.kt)
+
+    /// Removes every search highlight span, restoring the original text nodes.
+    static let clearSearchJs = """
+    (function(){
+      document.querySelectorAll('span.lnvox-search, span.lnvox-search-current').forEach(function(el){
+        var p = el.parentNode;
+        while (el.firstChild) p.insertBefore(el.firstChild, el);
+        p.removeChild(el);
+        p.normalize();
+      });
+    })();
+    """
+
+    /// Highlights every match of `jsPattern` on the loaded page and scrolls to
+    /// the match with document-order index `occurrence`. Walks the body's text
+    /// nodes, searches their concatenation (so matches spanning inline tags are
+    /// found), then wraps each match's per-node slices in spans — strictly
+    /// right to left, so earlier offsets stay valid as nodes get split.
+    /// Occurrence indexes agree with EpubTextSearch, which mirrors this
+    /// text extraction.
+    static func searchHighlightJs(jsPattern: String, occurrence: Int) -> String {
+        """
+        (function(){
+          var STYLE_ID = 'lnvox-search-style';
+          if (!document.getElementById(STYLE_ID)) {
+            var st = document.createElement('style');
+            st.id = STYLE_ID;
+            st.textContent =
+              '.lnvox-search{background:rgba(255,213,79,0.45) !important;border-radius:2px;}' +
+              '.lnvox-search-current{background:rgba(255,152,0,0.95) !important;border-radius:2px;}' +
+              '.lnvox-search-current{color:#1a1a1a !important;}';
+            (document.head || document.documentElement).appendChild(st);
+          }
+          \(clearSearchJs)
+          var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+          var nodes = [], starts = [], lens = [], text = '';
+          var n;
+          while ((n = walker.nextNode())) {
+            var tag = n.parentNode && n.parentNode.nodeName;
+            if (tag === 'SCRIPT' || tag === 'STYLE') continue;
+            starts.push(text.length);
+            lens.push(n.nodeValue.length);
+            nodes.push(n);
+            text += n.nodeValue;
+          }
+          var re = new RegExp(\(jsQuote(jsPattern)), 'gi');
+          var matches = [], m;
+          while ((m = re.exec(text))) {
+            if (m[0].length === 0) { re.lastIndex++; continue; }
+            matches.push([m.index, m.index + m[0].length]);
+            if (matches.length > 2000) break;
+          }
+          var K = \(occurrence);
+          var j = nodes.length - 1;
+          for (var i = matches.length - 1; i >= 0; i--) {
+            var ms = matches[i][0], me = matches[i][1];
+            var cls = (i === K) ? 'lnvox-search-current' : 'lnvox-search';
+            while (j > 0 && starts[j] >= me) j--;
+            var firstSpan = null;
+            for (var k = j; k >= 0; k--) {
+              var ns = starts[k], ne = ns + lens[k];
+              if (ne <= ms) break;
+              if (ns >= me) continue;
+              var s = Math.max(ms, ns) - ns, e = Math.min(me, ne) - ns;
+              if (e <= s || nodes[k].nodeValue.length < e) continue;
+              var r = document.createRange();
+              r.setStart(nodes[k], s);
+              r.setEnd(nodes[k], e);
+              var span = document.createElement('span');
+              span.className = cls;
+              try { r.surroundContents(span); firstSpan = span; } catch (ex) {}
+            }
+            if (i === K && firstSpan) firstSpan.scrollIntoView({block:'center'});
+          }
+        })();
+        """
     }
 }

@@ -38,8 +38,10 @@ struct RootView: View {
         .fullScreenCover(item: readerTarget) { target in
             ReaderScreen(bookId: target.id)
                 .modifier(ContinueCollectionHost(active: true))
+                .modifier(SleepTimerExpiredHost(active: true))
         }
         .modifier(ContinueCollectionHost(active: navigation.readerBookId == nil))
+        .modifier(SleepTimerExpiredHost(active: navigation.readerBookId == nil))
     }
 
     private var readerTarget: Binding<ReaderTarget?> {

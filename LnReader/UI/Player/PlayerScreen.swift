@@ -4,10 +4,11 @@ import LnReaderCore
 struct PlayerScreen: View {
     @Environment(PlayerEngine.self) private var engine
     @Environment(AppNavigation.self) private var navigation
+    @Environment(SleepTimerController.self) private var sleepTimer
     @State private var activeSheet: ActiveSheet?
 
     private enum ActiveSheet: String, Identifiable {
-        case timer, speed
+        case timer, speed, chapters
         var id: String { rawValue }
     }
 
@@ -27,36 +28,48 @@ struct PlayerScreen: View {
             .navigationTitle("Player")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Plain buttons only: a Menu anywhere in the toolbar breaks the
-                // system's "…" overflow menu (it silently fails to open), so
-                // speed presents a sheet instead — like Android's SpeedSheet.
+                // Visible icons: the stateful ones — AirPlay (route state) and
+                // the sleep timer (tinted while armed) — plus Read, which has
+                // no other entry point up here. Everything else lives in the
+                // overflow (.secondaryAction — SwiftUI's own ellipsis menu;
+                // UIKit's auto-overflow never opens, see DESIGN.md).
                 if let book = engine.book {
                     ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button {
-                            activeSheet = .speed
-                        } label: {
-                            Text("\(engine.rate.formatted(.number.precision(.fractionLength(0...2))))×")
-                                .font(.subheadline.monospacedDigit())
-                        }
-                        .accessibilityLabel("Playback speed")
-                        Button {
-                            activeSheet = .timer
-                        } label: {
-                            Image(systemName: "moon.zzz")
-                        }
-                        .accessibilityLabel("Sleep timer")
-                    }
-                    // secondaryAction: SwiftUI inlines these when space allows
-                    // and folds them into its own working ellipsis menu when
-                    // not — UIKit's auto-overflow menu never opens (iPadOS bug).
-                    if book.epubPath != nil {
-                        ToolbarItem(placement: .secondaryAction) {
+                        AirPlayButton()
+                            .frame(width: 28, height: 28)
+                            .accessibilityLabel("AirPlay")
+                        if book.epubPath != nil {
                             Button {
                                 navigation.showReader(bookId: book.id)
                             } label: {
-                                Label("Read", systemImage: "book")
+                                Image(systemName: "book")
                             }
+                            .accessibilityLabel("Read")
                         }
+                        Button {
+                            activeSheet = .timer
+                        } label: {
+                            Image(systemName: sleepTimer.state != nil ? "moon.zzz.fill" : "moon.zzz")
+                                .foregroundStyle(sleepTimer.state != nil ? Color.accentColor : Color.primary)
+                        }
+                        .accessibilityLabel("Sleep timer")
+                    }
+                    ToolbarItem(placement: .secondaryAction) {
+                        Button {
+                            activeSheet = .speed
+                        } label: {
+                            Label(
+                                "Playback speed · \(engine.rate.formatted(.number.precision(.fractionLength(0...2))))×",
+                                systemImage: "gauge.with.needle")
+                        }
+                    }
+                    ToolbarItem(placement: .secondaryAction) {
+                        Button {
+                            activeSheet = .chapters
+                        } label: {
+                            Label("Chapters", systemImage: "list.bullet")
+                        }
+                        .disabled(engine.chapters.isEmpty)
                     }
                     ToolbarItem(placement: .secondaryAction) {
                         Button {
@@ -83,6 +96,8 @@ struct PlayerScreen: View {
                     .presentationDetents([.medium, .large])
                 case .speed:
                     SpeedSheet()
+                case .chapters:
+                    ChapterListSheet()
                 }
             }
         }

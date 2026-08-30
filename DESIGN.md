@@ -204,6 +204,26 @@ guard already restarts finished books from zero.
   and opens a drag-to-reorder sheet (`List.onMove`, saves as rows move);
   books added later append at the end in import order.
 
+## v1.5 parity notes
+
+- **Whole-book search**: `EpubTextSearch` (LnReaderCore) is a 1:1 port of the
+  Android engine — plain-text extraction that mirrors the DOM text-node walk
+  (no separator for markup, entities decoded, head/script/style dropped),
+  whitespace/NBSP-flexible matching, 500-result cap. The highlight/step JS is
+  ported verbatim; occurrence indexes agree between the Swift and JS sides by
+  construction. Search bar is a top `safeAreaInset` row (not a nav-bar
+  replacement); results overlay the page. Same test suite as Android.
+- **Chromecast → AirPlay**: the platform-native equivalent. `AVRoutePickerView`
+  in the player top bar; AVPlayer streams to the route and everything driven
+  through the engine (mini-player, timer, reader follow, position saving)
+  keeps working. No Google Cast SDK.
+- **Sleep-timer expiry dialog**: `SleepTimerExpiredHost` alert over any screen
+  (tab root + reader cover, one active at a time); the alert, the notification
+  actions, and shake-to-postpone all drive the same controller state.
+- **Portrait-only** (Android) is NOT ported: iPhone was already
+  portrait-only; iPad keeps all orientations per Apple's HIG/multitasking
+  expectations.
+
 ## Signing / distribution
 
 - Automatic signing; team is selected in Xcode (or `DEVELOPMENT_TEAM` in

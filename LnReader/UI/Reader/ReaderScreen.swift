@@ -57,6 +57,16 @@ private struct ReaderContent: View {
                 ContentUnavailableView("Cannot read", systemImage: "book.closed", description: Text(error))
             } else {
                 WebViewContainer(webView: model.webView)
+                    .overlay {
+                        if model.searchActive, model.showSearchResults {
+                            SearchResultsList(model: model)
+                        }
+                    }
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        if model.searchActive {
+                            ReaderSearchBar(model: model)
+                        }
+                    }
                     .safeAreaInset(edge: .bottom) {
                         if engine.book != nil {
                             MiniPlayer()
@@ -77,6 +87,12 @@ private struct ReaderContent: View {
                         Label("Resume", systemImage: "text.line.first.and.arrowtriangle.forward")
                     }
                 }
+                Button {
+                    model.searchActive ? model.closeSearch() : model.openSearch()
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+                .accessibilityLabel("Search in book")
                 Button {
                     model.darkMode.toggle()
                 } label: {
