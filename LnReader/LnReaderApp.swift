@@ -7,6 +7,7 @@ struct LnReaderApp: App {
     @State private var engine: PlayerEngine
     @State private var sleepTimer: SleepTimerController
     @State private var collectionAdvance: CollectionAdvanceController
+    @State private var cast: CastController
     @State private var navigation = AppNavigation()
 
     init() {
@@ -24,6 +25,11 @@ struct LnReaderApp: App {
             bookRepository: container.bookRepository,
             fileStore: container.fileStore
         ))
+        _cast = State(initialValue: CastController(
+            engine: engine,
+            bookRepository: container.bookRepository,
+            fileStore: container.fileStore
+        ))
     }
 
     var body: some Scene {
@@ -33,6 +39,7 @@ struct LnReaderApp: App {
                 .environment(engine)
                 .environment(sleepTimer)
                 .environment(collectionAdvance)
+                .environment(cast)
                 .environment(navigation)
                 .task { await onLaunch() }
         }

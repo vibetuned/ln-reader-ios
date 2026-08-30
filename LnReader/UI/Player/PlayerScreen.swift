@@ -5,6 +5,7 @@ struct PlayerScreen: View {
     @Environment(PlayerEngine.self) private var engine
     @Environment(AppNavigation.self) private var navigation
     @Environment(SleepTimerController.self) private var sleepTimer
+    @Environment(CastController.self) private var cast
     @State private var activeSheet: ActiveSheet?
 
     private enum ActiveSheet: String, Identifiable {
@@ -35,6 +36,11 @@ struct PlayerScreen: View {
                 // UIKit's auto-overflow never opens, see DESIGN.md).
                 if let book = engine.book {
                     ToolbarItemGroup(placement: .topBarTrailing) {
+                        if cast.devicesAvailable {
+                            CastButton()
+                                .frame(width: 28, height: 28)
+                                .accessibilityLabel("Cast")
+                        }
                         AirPlayButton()
                             .frame(width: 28, height: 28)
                             .accessibilityLabel("AirPlay")

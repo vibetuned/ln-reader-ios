@@ -10,6 +10,11 @@ options:
 packages:
   LnReaderCore:
     path: LnReaderCore
+  # Official Google Cast XCFramework wrapped for SPM (Google ships no SPM
+  # support; this is SRG SSR's maintained wrapper of the unmodified binary).
+  GoogleCast:
+    url: https://github.com/SRGSSR/google-cast-sdk
+    exactVersion: 4.8.4
 
 targets:
   LnReader:
@@ -19,11 +24,21 @@ targets:
       - LnReader
     dependencies:
       - package: LnReaderCore
+      - package: GoogleCast
+        product: GoogleCast
     info:
       path: LnReader/Info.plist
       properties:
         CFBundleDisplayName: ln-reader
         UIBackgroundModes: [audio]
+        # Google Cast: device discovery + the receiver pulling media from the
+        # in-app HTTP server both use the local network.
+        NSLocalNetworkUsageDescription: >-
+          ln-reader looks for Google Cast devices on your network and streams
+          your audiobook to the one you choose.
+        NSBonjourServices:
+          - _googlecast._tcp
+          - _CC1AD845._googlecast._tcp
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

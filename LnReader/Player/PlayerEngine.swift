@@ -4,6 +4,20 @@ import Observation
 import UIKit
 import LnReaderCore
 
+/// What the engine needs from a remote (Google Cast) playback target.
+@MainActor
+protocol RemotePlayback: AnyObject {
+    /// nil while the remote position is not yet known (media still loading).
+    var positionMs: Int64? { get }
+    var isPlaying: Bool { get }
+    var isBuffering: Bool { get }
+    func play()
+    func pause()
+    func seek(toMs: Int64)
+    func setRate(_ rate: Double)
+    func setVolume(_ volume: Float)
+}
+
 /// The playback core: owns the AVPlayer, the audio session, lock-screen /
 /// control-center integration, and position auto-save. Process-scoped — the
 /// iOS analog of the Android PlaybackService + PlayerHolder pair, collapsed
@@ -28,6 +42,18 @@ final class PlayerEngine {
     /// Fired on a natural end of book (playback actually reached the end —
     /// never on a paused restore-at-end). Drives collection advancing.
     var onBookFinished: ((Book) -> Void)?
+
+    /// While non-nil, transport routes here instead of the local AVPlayer
+    /// (Google Cast). Everything reading engine state — mini-player, sleep
+    /// timer, reader follow, position saving — keeps working unchanged.
+    private var remote: RemotePlayback?
+    private var remoteTask: Task<Void, Never>?
+
+    var isCasting: Bool { remote != nil }
+
+    /// Fired when a (new) book finishes opening: while casting, the cast
+    /// controller loads it on the receiver instead of local playback.
+    var onBookOpened: ((Book, Int64, Bool) -> Void)?
 
     var locator: ChapterLocator {
         ChapterLocator(chapters: chapters, bookDurationMs: book?.durationMs ?? 0)
@@ -90,7 +116,12 @@ final class PlayerEngine {
         await player.seek(to: time(fromMs: startMs), toleranceBefore: .zero, toleranceAfter: .zero)
         positionMs = startMs
 
-        if autoPlay {
+        if isCasting {
+            // The receiver takes the new book; local stays silent.
+            onBookOpened?(detail.book, startMs, autoPlay)
+            isPlaying = autoPlay
+            updateNowPlaying()
+        } else if autoPlay {
             play()
         } else {
             updateNowPlaying()
@@ -128,10 +159,60 @@ final class PlayerEngine {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
+    // MARK: - Remote (Google Cast) handoff
+
+    /// Silences the local player and routes transport to `remote`, which takes
+    /// over at the current position/play state.
+    func enterRemote(_ newRemote: RemotePlayback) {
+        player.pause()
+        remote = newRemote
+        remoteTask?.cancel()
+        remoteTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                self?.remoteTick()
+            }
+        }
+    }
+
+    /// Hands playback back to the local player — paused, at the remote's last
+    /// position, so the device doesn't start talking on its own.
+    func exitRemote(atMs positionMs: Int64?) {
+        remoteTask?.cancel()
+        remoteTask = nil
+        remote = nil
+        isPlaying = false
+        if let positionMs, book != nil {
+            seek(toMs: positionMs)
+        }
+        Task { await savePosition() }
+        updateNowPlaying()
+    }
+
+    private func remoteTick() {
+        guard let remote else { return }
+        if let remoteMs = remote.positionMs {
+            positionMs = remoteMs
+        }
+        isPlaying = remote.isPlaying
+        isBuffering = remote.isBuffering
+        ticksSinceSave += 1
+        if isPlaying, ticksSinceSave >= 10 { // 10 × 0.5 s = 5 s
+            ticksSinceSave = 0
+            Task { await savePosition() }
+        }
+    }
+
     // MARK: - Transport
 
     func play() {
         guard book != nil else { return }
+        if let remote {
+            remote.play()
+            isPlaying = true
+            updateNowPlaying()
+            return
+        }
         try? AVAudioSession.sharedInstance().setActive(true)
         player.rate = Float(rate)
         isPlaying = true
@@ -139,6 +220,13 @@ final class PlayerEngine {
     }
 
     func pause() {
+        if let remote {
+            remote.pause()
+            isPlaying = false
+            Task { await savePosition() }
+            updateNowPlaying()
+            return
+        }
         player.pause()
         isPlaying = false
         Task { await savePosition() }
@@ -153,7 +241,11 @@ final class PlayerEngine {
         guard let book else { return }
         let clamped = min(max(0, targetMs), book.durationMs)
         positionMs = clamped
-        player.seek(to: time(fromMs: clamped), toleranceBefore: .zero, toleranceAfter: .zero)
+        if let remote {
+            remote.seek(toMs: clamped)
+        } else {
+            player.seek(to: time(fromMs: clamped), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
         updateNowPlaying()
     }
 
@@ -181,15 +273,34 @@ final class PlayerEngine {
 
     /// 0…1, used by the sleep timer's fade-out.
     func setVolume(_ volume: Float) {
-        player.volume = min(max(0, volume), 1)
+        let clamped = min(max(0, volume), 1)
+        if let remote {
+            remote.setVolume(clamped)
+        } else {
+            player.volume = clamped
+        }
     }
 
     func setRate(_ newRate: Double) {
         rate = newRate
         UserDefaults.standard.set(newRate, forKey: "player.rate")
-        if isPlaying { player.rate = Float(newRate) }
-        if #available(iOS 16.0, *) { player.defaultRate = Float(newRate) }
+        if let remote {
+            remote.setRate(newRate)
+        } else {
+            if isPlaying { player.rate = Float(newRate) }
+            if #available(iOS 16.0, *) { player.defaultRate = Float(newRate) }
+        }
         updateNowPlaying()
+    }
+
+    /// Remote reached the end of the stream naturally (Cast idleReason .finished).
+    func remoteFinished() {
+        guard remote != nil, let finished = book else { return }
+        isPlaying = false
+        positionMs = finished.durationMs
+        Task { await savePosition() }
+        updateNowPlaying()
+        onBookFinished?(finished)
     }
 
     // MARK: - Session / observers
@@ -210,7 +321,7 @@ final class PlayerEngine {
     }
 
     private func tick(_ time: CMTime) {
-        guard book != nil else { return }
+        guard book != nil, remote == nil else { return }
         if time.isNumeric {
             positionMs = Int64((time.seconds * 1000).rounded())
         }

@@ -213,10 +213,23 @@ guard already restarts finished books from zero.
   ported verbatim; occurrence indexes agree between the Swift and JS sides by
   construction. Search bar is a top `safeAreaInset` row (not a nav-bar
   replacement); results overlay the page. Same test suite as Android.
-- **Chromecast → AirPlay**: the platform-native equivalent. `AVRoutePickerView`
-  in the player top bar; AVPlayer streams to the route and everything driven
-  through the engine (mini-player, timer, reader follow, position saving)
-  keeps working. No Google Cast SDK.
+- **Casting — both AirPlay and Google Cast** (the Android app can only do
+  Cast; Apple offers no AirPlay sender SDK on Android):
+  - *AirPlay*: `AVRoutePickerView`; AVPlayer streams to the route natively.
+  - *Google Cast*: official SDK via SRG SSR's SPM wrapper of the unmodified
+    XCFramework (Google ships no SPM support). Same architecture as Android:
+    `CastMediaServer` (LnReaderCore, NWListener, tested over real HTTP) serves
+    `/t/<token>/book|cover/<id>` with Range support; the per-process token
+    gates the library from the rest of the network. `CastController` owns the
+    session: on start it brings the server up, loads the media on the receiver
+    at the current position, and puts the engine into remote mode — transport,
+    volume fade, speed (clamped 0.5–2× on the default receiver), position
+    polling all route to `GCKRemoteMediaClient`, so the mini-player, sleep
+    timer, reader follow, and collection advancing keep working. Disconnect
+    hands playback back to the local player at the receiver's position,
+    **paused**. The Cast button only appears while devices are discovered.
+    Requires `NSLocalNetworkUsageDescription` + `NSBonjourServices`
+    (`_googlecast._tcp`, `_CC1AD845._googlecast._tcp`).
 - **Sleep-timer expiry dialog**: `SleepTimerExpiredHost` alert over any screen
   (tab root + reader cover, one active at a time); the alert, the notification
   actions, and shake-to-postpone all drive the same controller state.

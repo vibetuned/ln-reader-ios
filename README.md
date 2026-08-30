@@ -75,7 +75,10 @@ swift run M4bDump <file.m4b>  # dump parsed metadata/chapters of a real m4b
 - [x] v1.5 parity — whole-book reader text search (results by page, in-place
       highlights, next/previous stepping), in-app sleep-timer expiry dialog,
       tidier player top bar (AirPlay + Read + tinted timer; speed/chapters/
-      images in the overflow). Android's Chromecast maps to native AirPlay.
+      images in the overflow)
+- [x] Casting — BOTH AirPlay (native) and Google Cast (official SDK; in-app
+      HTTP media server with Range support, session handoff local⇄remote,
+      hands back paused on disconnect); Android can only do Cast
 - [x] PrivacyInfo.xcprivacy (no tracking, no collected data); joint privacy
       policy + iOS docs live at https://ln.vibetuned.com
 - [ ] App Store Connect listing (screenshots, description, review notes)
