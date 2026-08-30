@@ -13,12 +13,12 @@ final class PlayerToolbarUITests: XCTestCase {
         ]
         app.launch()
 
-        // -autoPlay lands on the Player tab; wait for the toolbar to settle.
-        let speedButton = app.buttons["Playback speed"].firstMatch
-        _ = speedButton.waitForExistence(timeout: 20)
+        // -autoPlay lands on the Player tab; wait for the body row to settle
+        // (Sleep timer lives in the player body, never in the bar).
+        _ = app.buttons["Sleep timer"].firstMatch.waitForExistence(timeout: 20)
 
-        // Unique labels only ("Images" collides with the tab button).
-        let candidates = ["Playback speed", "Sleep timer", "Read", "View images"]
+        // Overflow-only items with unique labels ("Images" collides with the tab).
+        let candidates = ["Chapters", "View images"]
         let hiddenBefore = candidates.filter {
             let element = app.buttons[$0].firstMatch
             return !element.exists || !element.isHittable
@@ -46,17 +46,33 @@ final class PlayerToolbarUITests: XCTestCase {
         )
 
         // The revealed item must actually work.
-        if reappeared == "Playback speed" {
-            app.buttons["Playback speed"].firstMatch.tap()
+        if reappeared == "Chapters" {
+            app.buttons["Chapters"].firstMatch.tap()
             XCTAssertTrue(
-                app.staticTexts["Playback speed"].waitForExistence(timeout: 5),
-                "Speed sheet did not open from the overflow menu"
+                app.staticTexts["Chapters"].waitForExistence(timeout: 5),
+                "Chapter sheet did not open from the overflow menu"
             )
-        } else if reappeared == "Sleep timer" {
-            app.buttons["Sleep timer"].firstMatch.tap()
+        }
+    }
+
+    /// The stateful controls must be visible in the player body at every
+    /// width — never collapsed into a toolbar overflow (11-inch regression).
+    @MainActor
+    func testStatefulControlsAlwaysVisible() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-autoImport", "/Users/osf/Documents/books/toaru/A Certain Magical Index - Volume 03.m4b",
+            "-autoPlay",
+        ]
+        app.launch()
+
+        for label in ["Sleep timer", "AirPlay", "Read"] {
+            let element = app.buttons[label].firstMatch.exists
+                ? app.buttons[label].firstMatch
+                : app.otherElements[label].firstMatch
             XCTAssertTrue(
-                app.staticTexts["Sleep Timer"].waitForExistence(timeout: 5),
-                "Timer sheet did not open from the overflow menu"
+                element.waitForExistence(timeout: 30) && element.isHittable,
+                "\(label) control is not visible/hittable in the player"
             )
         }
     }

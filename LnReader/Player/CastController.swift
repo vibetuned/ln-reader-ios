@@ -58,6 +58,9 @@ final class CastController: NSObject {
         GCKCastContext.setSharedInstanceWith(options)
         GCKCastContext.sharedInstance().sessionManager.add(self)
         GCKCastContext.sharedInstance().discoveryManager.add(self)
+        // Passive discovery normally starts on foreground; be explicit so the
+        // button appears even before any Cast UI has ever been shown.
+        GCKCastContext.sharedInstance().discoveryManager.startDiscovery()
         devicesAvailable = GCKCastContext.sharedInstance().discoveryManager.deviceCount > 0
 
         engine.onBookOpened = { [weak self] book, startMs, autoPlay in

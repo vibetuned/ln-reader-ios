@@ -172,7 +172,10 @@ the tap lands, no menu appears (regardless of whether the collapsed items are
 Buttons or Menus; the `updateVisibleMenuWithBlock` console noise is
 unrelated and harmless). Rules:
 
-- Toolbars must never collapse implicitly: at most ~3 `topBarTrailing` items.
+- Toolbars must never collapse implicitly: the 11-inch iPad fits only ~2
+  trailing items beside the tab bar, so the player keeps ZERO visible
+  `topBarTrailing` items — the stateful controls (Cast / AirPlay / Read /
+  sleep timer) live in a row inside the player body where nothing can fold.
 - Items that may not fit go in `ToolbarItem(placement: .secondaryAction)`
   with full `Label`s — SwiftUI renders its own ellipsis menu, which works
   (player: Read / View images; reader: Smaller/Larger text).

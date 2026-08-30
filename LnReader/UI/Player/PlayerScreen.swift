@@ -4,8 +4,6 @@ import LnReaderCore
 struct PlayerScreen: View {
     @Environment(PlayerEngine.self) private var engine
     @Environment(AppNavigation.self) private var navigation
-    @Environment(SleepTimerController.self) private var sleepTimer
-    @Environment(CastController.self) private var cast
     @State private var activeSheet: ActiveSheet?
 
     private enum ActiveSheet: String, Identifiable {
@@ -17,7 +15,7 @@ struct PlayerScreen: View {
         NavigationStack {
             Group {
                 if engine.book != nil {
-                    PlayerContent()
+                    PlayerContent(openTimer: { activeSheet = .timer })
                 } else {
                     ContentUnavailableView(
                         "Nothing playing",
@@ -29,37 +27,13 @@ struct PlayerScreen: View {
             .navigationTitle("Player")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Visible icons: the stateful ones — AirPlay (route state) and
-                // the sleep timer (tinted while armed) — plus Read, which has
-                // no other entry point up here. Everything else lives in the
-                // overflow (.secondaryAction — SwiftUI's own ellipsis menu;
-                // UIKit's auto-overflow never opens, see DESIGN.md).
+                // NO visible topBarTrailing items: on the 11-inch iPad the bar
+                // can't fit them next to the tab bar and folds extras into
+                // UIKit's overflow, which never opens (see DESIGN.md). The
+                // stateful icons (Cast/AirPlay/Read/timer) live in a row inside
+                // the player body instead; the bar keeps only the working
+                // .secondaryAction ellipsis.
                 if let book = engine.book {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        if cast.devicesAvailable {
-                            CastButton()
-                                .frame(width: 28, height: 28)
-                                .accessibilityLabel("Cast")
-                        }
-                        AirPlayButton()
-                            .frame(width: 28, height: 28)
-                            .accessibilityLabel("AirPlay")
-                        if book.epubPath != nil {
-                            Button {
-                                navigation.showReader(bookId: book.id)
-                            } label: {
-                                Image(systemName: "book")
-                            }
-                            .accessibilityLabel("Read")
-                        }
-                        Button {
-                            activeSheet = .timer
-                        } label: {
-                            Image(systemName: sleepTimer.state != nil ? "moon.zzz.fill" : "moon.zzz")
-                                .foregroundStyle(sleepTimer.state != nil ? Color.accentColor : Color.primary)
-                        }
-                        .accessibilityLabel("Sleep timer")
-                    }
                     ToolbarItem(placement: .secondaryAction) {
                         Button {
                             activeSheet = .speed
@@ -147,7 +121,13 @@ private struct SpeedSheet: View {
 
 private struct PlayerContent: View {
     @Environment(PlayerEngine.self) private var engine
+    @Environment(AppNavigation.self) private var navigation
+    @Environment(SleepTimerController.self) private var sleepTimer
+    @Environment(CastController.self) private var cast
     @Environment(\.appContainer) private var container
+
+    /// Opens the sleep-timer sheet (owned by PlayerScreen).
+    let openTimer: () -> Void
 
     // While dragging, the scrubber drives this book-absolute preview position.
     @State private var scrubMs: Int64?
@@ -202,7 +182,11 @@ private struct PlayerContent: View {
 
                 transport
 
-                Spacer(minLength: 16)
+                Spacer(minLength: 18)
+
+                routesRow
+
+                Spacer(minLength: 12)
             }
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
@@ -361,6 +345,41 @@ private struct PlayerContent: View {
             }
             .disabled(engine.chapters.isEmpty)
         }
+    }
+
+    /// Cast / AirPlay / Read / sleep timer — in the body, where they can never
+    /// be folded into the bar's broken overflow at narrow widths.
+    private var routesRow: some View {
+        HStack(spacing: 34) {
+            if cast.devicesAvailable {
+                CastButton()
+                    .frame(width: 30, height: 30)
+                    .accessibilityLabel("Cast")
+            }
+            AirPlayButton()
+                .frame(width: 30, height: 30)
+                .accessibilityLabel("AirPlay")
+            if engine.book?.epubPath != nil {
+                Button {
+                    if let bookId = engine.book?.id {
+                        navigation.showReader(bookId: bookId)
+                    }
+                } label: {
+                    Image(systemName: "book")
+                        .font(.title3)
+                }
+                .accessibilityLabel("Read")
+            }
+            Button {
+                openTimer()
+            } label: {
+                Image(systemName: sleepTimer.state != nil ? "moon.zzz.fill" : "moon.zzz")
+                    .font(.title3)
+                    .foregroundStyle(sleepTimer.state != nil ? Color.accentColor : Color.primary)
+            }
+            .accessibilityLabel("Sleep timer")
+        }
+        .buttonStyle(.plain)
     }
 
     private func formatMs(_ ms: Int64) -> String {
