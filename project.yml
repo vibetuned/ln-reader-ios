@@ -52,8 +52,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.vibetuned.lnreader
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
-        # Set your team in Xcode (Signing & Capabilities) or uncomment:
-        # DEVELOPMENT_TEAM: XXXXXXXXXX
+        DEVELOPMENT_TEAM: 47D2CT68R2 # Vibetuned
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 0.1.0
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
