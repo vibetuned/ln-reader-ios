@@ -1,32 +1,58 @@
 import XCTest
 
 final class ReaderZoomUITests: XCTestCase {
-    /// "Larger text" must visibly scale the page: tap it repeatedly via the
-    /// toolbar overflow and assert a web text element's frame actually grows
-    /// (the old -webkit-text-size-adjust CSS was a silent no-op on iPad).
+    /// "Larger text" must visibly scale the page: tap it repeatedly and assert
+    /// a web text element's frame actually grows, then shrinks back — run
+    /// against BOTH books, whose EPUB stylesheets differ (viewport-relative
+    /// CSS can invert naive zoom approaches).
     @MainActor
     func testLargerTextGrowsRenderedText() throws {
+        try runZoomCheck(
+            book: "/Users/osf/Documents/books/toaru/A Certain Magical Index - Volume 03.m4b")
+    }
+
+    @MainActor
+    func testLargerTextGrowsRenderedTextAscendance() throws {
+        try runZoomCheck(
+            book: "/Users/osf/Documents/books/ascendance/Ascendance of a Bookworm - Part 5 Avatar of a Goddess v12.m4b")
+    }
+
+    @MainActor
+    private func runZoomCheck(book: String) throws {
         let app = XCUIApplication()
-        app.launchArguments = [
-            "-autoImport", "/Users/osf/Documents/books/toaru/A Certain Magical Index - Volume 03.m4b",
-            "-autoPlay", "-showReader",
-        ]
+        // Pin the starting zoom so growth expectations are deterministic.
+        app.launchArguments = ["-autoImport", book, "-autoPlay", "-showReader", "-textZoom", "100"]
         app.launch()
 
-        let webText = app.webViews.staticTexts.firstMatch
-        XCTAssertTrue(webText.waitForExistence(timeout: 60), "Reader page did not render")
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 60), "Reader did not render")
 
-        // Pause via the mini-player so auto-follow can't change the page (or
-        // scroll) under the measurement — and the current page has text.
+        // Pause so auto-follow can't move the page under the measurement.
         let pause = app.buttons["pause.fill"].firstMatch
         if pause.waitForExistence(timeout: 5) { pause.tap() }
         Thread.sleep(forTimeInterval: 1)
 
-        // Track one concrete text by its content, not by position.
-        let sample = app.webViews.staticTexts.firstMatch
-        XCTAssertTrue(sample.waitForExistence(timeout: 10))
-        let sampleLabel = sample.label
-        XCTAssertFalse(sampleLabel.isEmpty)
+        // The book may open on a cover/illustration page whose width-clamped
+        // image is zoom-immune — page forward (which also disables follow)
+        // until a page with real prose shows up, and measure a paragraph.
+        let nextPage = app.buttons["chevron.right"].firstMatch
+        var sampleLabel = ""
+        for _ in 0 ..< 15 {
+            let prose = app.webViews.staticTexts.matching(
+                NSPredicate(format: "label MATCHES %@", "(?s).{80,}")
+            ).firstMatch
+            if prose.exists {
+                sampleLabel = prose.label
+                break
+            }
+            XCTAssertTrue(nextPage.waitForExistence(timeout: 5), "Next-page button missing")
+            nextPage.tap()
+            Thread.sleep(forTimeInterval: 1.2)
+        }
+        XCTAssertFalse(sampleLabel.isEmpty, "No prose page found to measure")
+        let sample = app.webViews.staticTexts.matching(
+            NSPredicate(format: "label == %@", sampleLabel)
+        ).firstMatch
         let before = sample.frame.height
         XCTAssertGreaterThan(before, 0)
 

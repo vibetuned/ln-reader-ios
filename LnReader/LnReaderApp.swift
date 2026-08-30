@@ -86,6 +86,10 @@ struct LnReaderApp: App {
         if arguments.contains("-showImages") {
             navigation.selectedTab = .images
         }
+        if let index = arguments.firstIndex(of: "-textZoom"), index + 1 < arguments.count,
+           let zoom = Int(arguments[index + 1]) {
+            UserDefaults.standard.set(zoom, forKey: "reader.textZoom")
+        }
         if arguments.contains("-showReader"), let bookId = engine.book?.id {
             navigation.showReader(bookId: bookId)
         }

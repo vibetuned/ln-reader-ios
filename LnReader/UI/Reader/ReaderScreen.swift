@@ -104,14 +104,16 @@ private struct ReaderContent: View {
                 Button {
                     model.textZoom = max(80, model.textZoom - 10)
                 } label: {
-                    Image(systemName: "textformat.size.smaller")
+                    Text("A−")
+                        .font(.footnote.weight(.semibold))
                 }
                 .disabled(model.textZoom <= 80)
                 .accessibilityLabel("Smaller text")
                 Button {
                     model.textZoom = min(250, model.textZoom + 10)
                 } label: {
-                    Image(systemName: "textformat.size.larger")
+                    Text("A+")
+                        .font(.body.weight(.semibold))
                 }
                 .disabled(model.textZoom >= 250)
                 .accessibilityLabel("Larger text")

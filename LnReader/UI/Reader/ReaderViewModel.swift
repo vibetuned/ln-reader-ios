@@ -290,6 +290,12 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
         /* System font (San Francisco) instead of WebKit's Times default. */
         body { font-family: -apple-system, "Helvetica Neue", sans-serif !important; }
         body * { font-family: inherit !important; }
+        /* iPadOS text autosizing rescales fonts to fight any zoom (images
+           scale, text doesn't — or moves opposite). Kill it, then zoom via
+           CSS zoom, which keeps the layout viewport (and the book's media
+           queries) untouched. */
+        html, body { -webkit-text-size-adjust: none !important; text-size-adjust: none !important; }
+        body { zoom: \(textZoom)% !important; }
         \(darkMode ? darkCss : "")
         .lnvox-active { background-color: \(highlightColor) !important; border-radius: 3px; }
         """
@@ -305,10 +311,6 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
         })();
         """
         webView.evaluateJavaScript(js)
-        // -webkit-text-size-adjust is an iPhone-Safari-only feature (a silent
-        // no-op in WKWebView on iPad); pageZoom is the native equivalent of
-        // Android's settings.textZoom.
-        webView.pageZoom = CGFloat(textZoom) / 100
         webView.backgroundColor = darkMode ? UIColor(white: 0.07, alpha: 1) : .systemBackground
         webView.scrollView.backgroundColor = webView.backgroundColor
     }
