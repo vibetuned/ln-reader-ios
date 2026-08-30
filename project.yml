@@ -50,6 +50,13 @@ targets:
             LSHandlerRank: Alternate
             LSItemContentTypes:
               - org.idpf.epub-container
+          # Sync manifests are plain .json, so this claims JSON generally —
+          # ln-reader shows up in AirDrop/"Open in…" for any JSON file, and
+          # the in-app attach sheet lets the user pick the target book.
+          - CFBundleTypeName: Sync Manifest
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.json
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: com.vibetuned.lnreader.m4b
             UTTypeDescription: M4B Audiobook
