@@ -98,24 +98,23 @@ private struct ReaderContent: View {
                 } label: {
                     Image(systemName: model.darkMode ? "sun.max" : "moon")
                 }
-            }
-            // secondaryAction folds into SwiftUI's working ellipsis when tight
-            // (UIKit's auto-overflow menu never opens — see DESIGN.md).
-            ToolbarItem(placement: .secondaryAction) {
+                // Inline, not overflow: the reader cover owns its whole nav
+                // bar (no tab bar beside it), and overflow menu item taps are
+                // dropped intermittently on iPadOS.
                 Button {
                     model.textZoom = max(80, model.textZoom - 10)
                 } label: {
-                    Label("Smaller text", systemImage: "textformat.size.smaller")
+                    Image(systemName: "textformat.size.smaller")
                 }
                 .disabled(model.textZoom <= 80)
-            }
-            ToolbarItem(placement: .secondaryAction) {
+                .accessibilityLabel("Smaller text")
                 Button {
                     model.textZoom = min(250, model.textZoom + 10)
                 } label: {
-                    Label("Larger text", systemImage: "textformat.size.larger")
+                    Image(systemName: "textformat.size.larger")
                 }
                 .disabled(model.textZoom >= 250)
+                .accessibilityLabel("Larger text")
             }
             ToolbarItemGroup(placement: .bottomBar) {
                 Button {

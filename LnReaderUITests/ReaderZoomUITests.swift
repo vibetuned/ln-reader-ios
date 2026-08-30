@@ -30,15 +30,10 @@ final class ReaderZoomUITests: XCTestCase {
         let before = sample.frame.height
         XCTAssertGreaterThan(before, 0)
 
-        // Each tap closes the menu; reopen for the next one. +10% x4 = at least +40%.
+        // A+ is a direct toolbar button now. +10% x4 = at least +40%.
+        let larger = app.buttons["Larger text"].firstMatch
+        XCTAssertTrue(larger.waitForExistence(timeout: 10), "Larger text button missing")
         for _ in 0 ..< 4 {
-            let overflow = app.buttons.matching(
-                NSPredicate(format: "identifier CONTAINS[c] 'overflow' OR label IN {'More', 'Plus'}")
-            ).firstMatch
-            XCTAssertTrue(overflow.waitForExistence(timeout: 10), "Reader overflow button missing")
-            overflow.tap()
-            let larger = app.buttons["Larger text"].firstMatch
-            XCTAssertTrue(larger.waitForExistence(timeout: 5), "Larger text item missing from overflow")
             larger.tap()
         }
 
@@ -52,6 +47,21 @@ final class ReaderZoomUITests: XCTestCase {
         XCTAssertGreaterThan(
             after, before * 1.2,
             "Text did not grow after four Larger-text taps (\(before) -> \(after))"
+        )
+
+        // And the opposite direction: Smaller must shrink it back down.
+        let smaller = app.buttons["Smaller text"].firstMatch
+        XCTAssertTrue(smaller.waitForExistence(timeout: 10), "Smaller text button missing")
+        for _ in 0 ..< 6 {
+            smaller.tap()
+        }
+        Thread.sleep(forTimeInterval: 1)
+        let shrunk = app.webViews.staticTexts.matching(
+            NSPredicate(format: "label == %@", sampleLabel)
+        ).firstMatch.frame.height
+        XCTAssertLessThan(
+            shrunk, after * 0.85,
+            "Text did not shrink after six Smaller-text taps (\(after) -> \(shrunk))"
         )
     }
 }

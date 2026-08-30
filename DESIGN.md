@@ -177,8 +177,12 @@ unrelated and harmless). Rules:
   `topBarTrailing` items — the stateful controls (Cast / AirPlay / Read /
   sleep timer) live in a row inside the player body where nothing can fold.
 - Items that may not fit go in `ToolbarItem(placement: .secondaryAction)`
-  with full `Label`s — SwiftUI renders its own ellipsis menu, which works
-  (player: Read / View images; reader: Smaller/Larger text).
+  with full `Label`s — SwiftUI renders its own ellipsis menu, which opens
+  reliably (player: speed / chapters / images). Caveat: even those item taps
+  are dropped *intermittently* on iPadOS, so anything tapped repeatedly or
+  whose silent failure confuses (the reader's A−/A+) must be a direct
+  button. The reader cover owns its whole nav bar (no adjacent tab bar), so
+  it shows search / dark / A− / A+ inline with room to spare.
 - Directly visible `Menu`s work fine (Library sort/add) — but playback speed
   is a Button + SpeedSheet (Android parity) since it sat in a crowded bar.
 - `PlayerToolbarUITests` guards this on the 11-inch iPad.
