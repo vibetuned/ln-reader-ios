@@ -83,6 +83,11 @@ struct LnReaderApp: App {
             sleepTimer.start(SleepTimerConfig(mode: .chapters(count: 1), fadeOutSeconds: 10))
             navigation.selectedTab = .timer
         }
+        if let index = arguments.firstIndex(of: "-armTimer"), index + 1 < arguments.count,
+           let minutes = Int(arguments[index + 1]) {
+            sleepTimer.start(SleepTimerConfig(mode: .time(minutes: minutes), fadeOutSeconds: 10))
+            navigation.selectedTab = .timer
+        }
         if arguments.contains("-showImages") {
             navigation.selectedTab = .images
         }
@@ -90,8 +95,43 @@ struct LnReaderApp: App {
            let zoom = Int(arguments[index + 1]) {
             UserDefaults.standard.set(zoom, forKey: "reader.textZoom")
         }
+        if arguments.contains("-readerDark") {
+            UserDefaults.standard.set(true, forKey: "reader.darkMode")
+        }
+        // -openTitle <prefix>: open the library book whose title starts with
+        // the prefix (case-insensitive), instead of the restored last-played.
+        if let index = arguments.firstIndex(of: "-openTitle"), index + 1 < arguments.count {
+            let prefix = arguments[index + 1].lowercased()
+            do {
+                for try await items in container.bookRepository.observeBooks() {
+                    if let match = items.first(where: { $0.book.title.lowercased().hasPrefix(prefix) }) {
+                        await engine.open(bookId: match.id, autoPlay: false)
+                        navigation.selectedTab = .player
+                    }
+                    break
+                }
+            } catch {
+                print("openTitle failed: \(error)")
+            }
+        }
+        if let index = arguments.firstIndex(of: "-seekTo"), index + 1 < arguments.count,
+           let seconds = Int64(arguments[index + 1]), engine.book != nil {
+            engine.seek(toMs: seconds * 1000)
+        }
+        if arguments.contains("-play"), engine.book != nil {
+            engine.play()
+        }
         if arguments.contains("-showReader"), let bookId = engine.book?.id {
             navigation.showReader(bookId: bookId)
+        }
+        if let index = arguments.firstIndex(of: "-tab"), index + 1 < arguments.count {
+            switch arguments[index + 1] {
+            case "library": navigation.selectedTab = .library
+            case "player": navigation.selectedTab = .player
+            case "images": navigation.selectedTab = .images
+            case "timer": navigation.selectedTab = .timer
+            default: break
+            }
         }
         #endif
     }

@@ -31,6 +31,11 @@ final class SleepTimerNotifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func requestPermission() async {
+        #if DEBUG
+        // Scripted screenshots/smoke tests: keep the system permission dialog
+        // from covering the screen.
+        if ProcessInfo.processInfo.arguments.contains("-skipNotifAuth") { return }
+        #endif
         _ = try? await UNUserNotificationCenter.current()
             .requestAuthorization(options: [.alert, .sound])
     }

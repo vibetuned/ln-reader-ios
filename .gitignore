@@ -13,3 +13,6 @@ Package.resolved
 
 # macOS
 .DS_Store
+
+# Local xcodebuild output (screenshot builds)
+build/

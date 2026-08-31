@@ -152,6 +152,22 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
         } else {
             loadPage(0)
         }
+
+        #if DEBUG
+        // Dev hook for scripted screenshots/smoke tests: -readerSearch <query>
+        // opens the search bar and runs the query once the book is loaded.
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "-readerSearch"), index + 1 < arguments.count {
+            searchQuery = arguments[index + 1]
+            openSearch()
+            submitSearch()
+            // Drop keyboard focus so captures show the results, not the keyboard.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        }
+        #endif
     }
 
     // MARK: - Paging

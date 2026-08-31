@@ -7,7 +7,8 @@ and an EPUB companion reader that highlights text in sync with the audio.
 
 The Android client lives in [`ln-reader`](https://github.com/vibetuned/ln-reader);
 this repo is the Swift/SwiftUI port. Feature reference: the Android README.
-Architecture and porting decisions: [DESIGN.md](DESIGN.md).
+Architecture and porting decisions: [DESIGN.md](DESIGN.md). Release notes:
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Layout
 

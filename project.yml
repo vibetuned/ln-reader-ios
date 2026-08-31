@@ -30,6 +30,9 @@ targets:
       path: LnReader/Info.plist
       properties:
         CFBundleDisplayName: ln-reader
+        # No proprietary encryption (local playback; standard OS networking
+        # only) — answers the export-compliance question once, permanently.
+        ITSAppUsesNonExemptEncryption: false
         UIBackgroundModes: [audio]
         # Google Cast: device discovery + the receiver pulling media from the
         # in-app HTTP server both use the local network.
@@ -41,6 +44,9 @@ targets:
           - _CC1AD845._googlecast._tcp
         # Receive .m4b / .epub via AirDrop and "Open in…" — otherwise iMovie
         # and Books capture them and Save-to-Files is never offered.
+        # Not a document-browser app: imports are always copied into the app
+        # container (never edited in place), so opening-in-place is off.
+        LSSupportsOpeningDocumentsInPlace: false
         CFBundleDocumentTypes:
           - CFBundleTypeName: M4B Audiobook
             LSHandlerRank: Owner
@@ -80,8 +86,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 47D2CT68R2 # Vibetuned
-        CURRENT_PROJECT_VERSION: 1
-        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 2
+        MARKETING_VERSION: 1.0.0
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 
