@@ -29,7 +29,14 @@ targets:
     info:
       path: LnReader/Info.plist
       properties:
-        CFBundleDisplayName: ln-reader
+        # Wire the version/build to the build settings below — XcodeGen writes
+        # literals otherwise, and bumps in this file never reach the binary.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # "L&N Reader": App Review 2.3.8 requires the device name to closely
+        # match the marketplace name (also "L&N Reader"; plain "LN Reader"
+        # was already taken on the App Store).
+        CFBundleDisplayName: "L&N Reader"
         # No proprietary encryption (local playback; standard OS networking
         # only) — answers the export-compliance question once, permanently.
         ITSAppUsesNonExemptEncryption: false
@@ -86,8 +93,9 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 47D2CT68R2 # Vibetuned
-        CURRENT_PROJECT_VERSION: 2
-        MARKETING_VERSION: 1.0.0
+        CURRENT_PROJECT_VERSION: 4
+        # Matches the App Store Connect version string ("1.0") — uploads must agree.
+        MARKETING_VERSION: "1.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 
