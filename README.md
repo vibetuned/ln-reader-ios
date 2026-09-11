@@ -82,4 +82,6 @@ swift run M4bDump <file.m4b>  # dump parsed metadata/chapters of a real m4b
       hands back paused on disconnect); Android can only do Cast
 - [x] PrivacyInfo.xcprivacy (no tracking, no collected data); joint privacy
       policy + iOS docs live at https://ln.vibetuned.com
-- [ ] App Store Connect listing (screenshots, description, review notes)
+- [x] Published on the App Store as **L&N Reader** (the name "ln-reader" was
+      taken; App Review 2.3.8 requires the store and device names to match) —
+      https://apps.apple.com/app/id6807116233
