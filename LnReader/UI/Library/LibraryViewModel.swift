@@ -182,7 +182,7 @@ final class LibraryViewModel {
             let scoped = pickedURL.startAccessingSecurityScopedResource()
             defer { if scoped { pickedURL.stopAccessingSecurityScopedResource() } }
             try await repository.importBook(from: pickedURL, collectionId: collectionId) { phase in
-                Task { @MainActor [weak self] in self?.importPhase = phase }
+                Task { @MainActor [weak self = self] in self?.importPhase = phase }
             }
         } catch {
             importErrorMessage = "Import failed: \(error.localizedDescription)"

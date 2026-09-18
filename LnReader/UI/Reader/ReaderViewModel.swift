@@ -334,18 +334,20 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
     /// pins any device autosizing to exactly 1x.
     static func appearanceCss(textZoom: Int, darkMode: Bool) -> String {
         let darkCss = """
-        html, body { background: #121212 !important; color: #e2e2e2 !important; }
+        html, body { background: #121316 !important; color: #e8ece9 !important; }
         body * { background-color: transparent !important; color: inherit !important; }
-        a { color: #8ab4f8 !important; }
+        a { color: #abcfb2 !important; }
         img, svg { opacity: 0.92; }
         """
-        let highlightColor = darkMode ? "rgba(255, 214, 79, 0.35)" : "rgba(255, 214, 79, 0.55)"
+        let highlightColor = darkMode ? "rgba(198, 146, 52, 0.18)" : "rgba(198, 146, 52, 0.40)"
+        let highlightText = darkMode ? "#f1c465" : "#3c2f00"
         return """
         /* System font (San Francisco) instead of WebKit's Times default. */
         body { font-family: -apple-system, "Helvetica Neue", sans-serif !important; }
         body * { font-family: inherit !important; }
         html { font-size: \(textZoom)% !important; -webkit-text-size-adjust: 100%; }
         \(darkMode ? darkCss : "")
+        .lnvox-active, .lnvox-active * { color: \(highlightText) !important; }
         .lnvox-active { background-color: \(highlightColor) !important; border-radius: 3px; }
         """
     }
@@ -369,7 +371,7 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
     private func applyAppearance() {
         let css = Self.appearanceCss(textZoom: textZoom, darkMode: darkMode)
         webView.evaluateJavaScript(Self.appearanceInjectionJs(css: css))
-        webView.backgroundColor = darkMode ? UIColor(white: 0.07, alpha: 1) : .systemBackground
+        webView.backgroundColor = darkMode ? UIColor(red: 0.071, green: 0.075, blue: 0.086, alpha: 1) : .systemBackground
         webView.scrollView.backgroundColor = webView.backgroundColor
     }
 
@@ -429,9 +431,9 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
             var st = document.createElement('style');
             st.id = STYLE_ID;
             st.textContent =
-              '.lnvox-search{background:rgba(255,213,79,0.45) !important;border-radius:2px;}' +
-              '.lnvox-search-current{background:rgba(255,152,0,0.95) !important;border-radius:2px;}' +
-              '.lnvox-search-current{color:#1a1a1a !important;}';
+              '.lnvox-search{background:rgba(198,146,52,0.38) !important;border-radius:2px;}' +
+              '.lnvox-search-current{background:rgba(233,195,73,0.95) !important;border-radius:2px;}' +
+              '.lnvox-search-current{color:#3c2f00 !important;}';
             (document.head || document.documentElement).appendChild(st);
           }
           \(clearSearchJs)

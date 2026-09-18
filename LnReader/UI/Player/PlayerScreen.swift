@@ -283,9 +283,18 @@ private struct PlayerContent: View {
                     .font(.subheadline.weight(.medium))
                     .lineLimit(1)
                 if let chapter {
-                    Text("Chapter \(chapter.index + 1) of \(engine.chapters.count)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    // The caption carries the affordance: a filled triangle marks the row as a
+                    // picker, the way the Android selector's arrow_drop_down does. Decorative —
+                    // the Button already carries the action, so VoiceOver skips the glyph.
+                    HStack(spacing: 3) {
+                        Text("Chapter \(chapter.index + 1) of \(engine.chapters.count)")
+                            .font(.caption)
+                        Image(systemName: "arrowtriangle.down.fill")
+                            .font(.caption2)
+                            .imageScale(.small)
+                            .accessibilityHidden(true)
+                    }
+                    .foregroundStyle(.secondary)
                 }
             }
         }
