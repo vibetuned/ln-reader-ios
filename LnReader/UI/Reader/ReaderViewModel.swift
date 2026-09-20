@@ -10,6 +10,8 @@ import LnReaderCore
 @Observable
 final class ReaderViewModel: NSObject, WKNavigationDelegate {
     private let repository: BookRepository
+    private let readingPositionRepository: ReadingPositionRepository
+    private let readLogRepository: ReadLogRepository
     private let fileStore: FileStore
     private let engine: PlayerEngine
     private let defaults = UserDefaults.standard
@@ -44,6 +46,19 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
     private var activeBeatId: String?
     private var followTask: Task<Void, Never>?
 
+    // MARK: Reading position + usage log
+
+    /// Scroll offset (0…1) to apply once the current page finishes loading — the saved reading
+    /// position being restored. One-shot: cleared after it lands, so paging on doesn't re-scroll.
+    private var pendingRestoreFraction: Double?
+    /// Samples the page's scroll offset while a page is up, so the place is kept as you read.
+    private var scrollSampleTask: Task<Void, Never>?
+    private var lastSavedIndex = -1
+    private var lastSavedFraction = -1.0
+    /// The open `readLog` read session, as a Task (the insert is asynchronous).
+    private var readSession: Task<String, Error>?
+    private var readHeartbeatTask: Task<Void, Never>?
+
     // MARK: Whole-book search state (mirrors the Android ReaderUiState fields)
 
     /// The match the WebView should highlight and scroll to once its page loads.
@@ -65,8 +80,16 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
     private(set) var searchSelection: Int?
     private var searchTarget: SearchTarget?
 
-    init(repository: BookRepository, fileStore: FileStore, engine: PlayerEngine) {
+    init(
+        repository: BookRepository,
+        readingPositionRepository: ReadingPositionRepository,
+        readLogRepository: ReadLogRepository,
+        fileStore: FileStore,
+        engine: PlayerEngine
+    ) {
         self.repository = repository
+        self.readingPositionRepository = readingPositionRepository
+        self.readLogRepository = readLogRepository
         self.fileStore = fileStore
         self.engine = engine
         darkMode = defaults.object(forKey: "reader.darkMode") as? Bool ?? false
@@ -138,8 +161,9 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
             manifest = SyncManifestParser.parse(fileURL: fileStore.url(for: syncPath))
         }
 
-        // With sync + this book loaded in the player, follow from the current
-        // beat; otherwise start at the first page.
+        // With sync + this book loaded in the player, follow from the current beat. Otherwise —
+        // an EPUB-only book, or an audiobook that isn't the one playing — come back to the saved
+        // page and scroll offset.
         if manifest != nil, engine.book?.id == bookId {
             followEnabled = true
             if let beat = currentBeat() {
@@ -150,13 +174,29 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
             }
             startFollowLoop()
         } else {
-            loadPage(0)
+            let saved = try? await readingPositionRepository.get(bookId: bookId)
+            let startIndex = min(max(0, saved?.spineIndex ?? 0), max(0, spine.count - 1))
+            lastSavedIndex = saved?.spineIndex ?? -1
+            lastSavedFraction = saved?.scrollFraction ?? -1
+            if let fraction = saved?.scrollFraction, fraction > 0 {
+                pendingRestoreFraction = fraction
+            }
+            loadPage(startIndex)
         }
+        startReadSession(bookId: bookId, title: detail.book.title)
 
         #if DEBUG
         // Dev hook for scripted screenshots/smoke tests: -readerSearch <query>
-        // opens the search bar and runs the query once the book is loaded.
+        // opens the search bar and runs the query once the book is loaded;
+        // -readerPage <n> turns to a 1-based page (exercises the page mark).
         let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "-readerPage"), index + 1 < arguments.count,
+           let page = Int(arguments[index + 1]), spine.indices.contains(page - 1) {
+            followEnabled = false
+            pendingRestoreFraction = nil
+            loadPage(page - 1)
+            persistPosition(spineIndex: page - 1, fraction: 0)
+        }
         if let index = arguments.firstIndex(of: "-readerSearch"), index + 1 < arguments.count {
             searchQuery = arguments[index + 1]
             openSearch()
@@ -180,12 +220,14 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
         guard canGoForward else { return }
         followEnabled = false
         loadPage(currentIndex + 1)
+        persistPosition(spineIndex: currentIndex, fraction: 0)
     }
 
     func previousPage() {
         guard canGoBack else { return }
         followEnabled = false
         loadPage(currentIndex - 1)
+        persistPosition(spineIndex: currentIndex, fraction: 0)
     }
 
     func resumeFollow() {
@@ -197,9 +239,109 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
 
     private func loadPage(_ index: Int) {
         guard let extractionDir, spine.indices.contains(index) else { return }
+        // A page being replaced must not have the incoming page's offset sampled against it.
+        scrollSampleTask?.cancel()
+        scrollSampleTask = nil
         currentIndex = index
         let pageURL = extractionDir.appendingPathComponent(spine[index])
         webView.loadFileURL(pageURL, allowingReadAccessTo: extractionDir)
+    }
+
+    // MARK: - Reading position (the EPUB "page mark")
+
+    /// Restores the saved offset once the page has laid out. Run twice because a page with images
+    /// grows after `didFinish`, and a single early scroll would land short.
+    private func restorePendingScrollIfNeeded() {
+        guard let fraction = pendingRestoreFraction else { return }
+        pendingRestoreFraction = nil
+        let js = Self.restoreScrollJs(fraction: fraction)
+        webView.evaluateJavaScript(js)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            // Completion-handler overload: inside an async context the bare call resolves to the
+            // `async throws` one, which this doesn't need to wait on.
+            self?.webView.evaluateJavaScript(js, completionHandler: nil)
+            self?.startScrollSampling()
+        }
+    }
+
+    /// While a page is up, sample its scroll offset a few times a minute and save when it moved.
+    private func startScrollSampling() {
+        scrollSampleTask?.cancel()
+        let index = currentIndex
+        scrollSampleTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard let self, self.currentIndex == index else { return }
+                let value = try? await self.webView.evaluateJavaScript(Self.scrollFractionJs)
+                guard let fraction = (value as? NSNumber)?.doubleValue else { continue }
+                self.reportScroll(spineIndex: index, fraction: fraction)
+            }
+        }
+    }
+
+    private func reportScroll(spineIndex: Int, fraction: Double) {
+        guard spineIndex == currentIndex, pendingRestoreFraction == nil else { return }
+        let clamped = min(1, max(0, fraction))
+        // An idle page costs nothing: only a real move is written.
+        guard spineIndex != lastSavedIndex || abs(clamped - lastSavedFraction) >= 0.01 else { return }
+        persistPosition(spineIndex: spineIndex, fraction: clamped)
+    }
+
+    private func persistPosition(spineIndex: Int, fraction: Double) {
+        guard let bookId = book?.id else { return }
+        lastSavedIndex = spineIndex
+        lastSavedFraction = fraction
+        let repository = readingPositionRepository
+        let count = spine.count
+        Task { try? await repository.save(bookId: bookId, spineIndex: spineIndex, scrollFraction: fraction, spineCount: count) }
+    }
+
+    /// Fraction (0…1) of the page's scrollable height the viewport sits at; 0 when it all fits.
+    static let scrollFractionJs = """
+    (function(){
+      var d=document.documentElement, b=document.body;
+      var h=Math.max(d.scrollHeight, b?b.scrollHeight:0) - window.innerHeight;
+      return h>0 ? Math.min(1, Math.max(0, window.scrollY/h)) : 0;
+    })();
+    """
+
+    static func restoreScrollJs(fraction: Double) -> String {
+        """
+        (function(f){
+          var d=document.documentElement, b=document.body;
+          var h=Math.max(d.scrollHeight, b?b.scrollHeight:0) - window.innerHeight;
+          if (h>0) window.scrollTo(0, f*h);
+        })(\(min(1, max(0, fraction))));
+        """
+    }
+
+    // MARK: - readLog: read sessions
+
+    private func startReadSession(bookId: String, title: String) {
+        endReadSession()
+        let repository = readLogRepository
+        let index = Int64(currentIndex)
+        readSession = Task { try await repository.start(bookId: bookId, bookTitle: title, kind: .read, position: index) }
+        readHeartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard let self, let session = self.readSession else { return }
+                let position = Int64(self.currentIndex)
+                try? await repository.heartbeat(sessionId: try await session.value, position: position)
+            }
+        }
+    }
+
+    private func endReadSession() {
+        readHeartbeatTask?.cancel()
+        readHeartbeatTask = nil
+        guard let session = readSession else { return }
+        readSession = nil
+        let repository = readLogRepository
+        let position = Int64(currentIndex)
+        // Detached so closing the row survives the reader being torn down.
+        Task.detached { try? await repository.end(sessionId: try await session.value, position: position) }
     }
 
     // MARK: - Audio-sync follow
@@ -217,6 +359,9 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
     func stop() {
         followTask?.cancel()
         followTask = nil
+        scrollSampleTask?.cancel()
+        scrollSampleTask = nil
+        endReadSession()
     }
 
     private func currentBeat() -> SyncBeat? {
@@ -317,6 +462,11 @@ final class ReaderViewModel: NSObject, WKNavigationDelegate {
                 highlight(beatId: activeBeatId)
             }
             applySearchHighlight()
+            if pendingRestoreFraction != nil {
+                restorePendingScrollIfNeeded()
+            } else {
+                startScrollSampling()
+            }
         }
     }
 

@@ -4,6 +4,19 @@ import Foundation
 /// (e.g. "OEBPS/Text/prologue.xhtml").
 public struct EpubBook: Equatable, Sendable {
     public let spine: [String]
+    /// `dc:title` from the OPF, if present.
+    public let title: String?
+    /// First `dc:creator` from the OPF, if present.
+    public let author: String?
+    /// Extraction-root-relative path of the cover image, resolved from the OPF, if declared.
+    public let coverPath: String?
+
+    public init(spine: [String], title: String? = nil, author: String? = nil, coverPath: String? = nil) {
+        self.spine = spine
+        self.title = title
+        self.author = author
+        self.coverPath = coverPath
+    }
 }
 
 public enum EpubError: Error {
@@ -71,15 +84,27 @@ public enum EpubReader {
         let opfDir = (opfPath as NSString).deletingLastPathComponent
 
         let opf = OpfParser.parse(opfData)
+        func rootRelative(_ href: String) -> String? {
+            guard let decoded = href.components(separatedBy: "#").first?.removingPercentEncoding else { return nil }
+            return opfDir.isEmpty ? decoded : (opfDir as NSString).appendingPathComponent(decoded)
+        }
         let spine = opf.spineIdrefs.compactMap { idref -> String? in
-            guard let href = opf.manifest[idref],
-                  let decoded = href.removingPercentEncoding else { return nil }
-            return opfDir.isEmpty
-                ? decoded
-                : (opfDir as NSString).appendingPathComponent(decoded)
+            opf.manifest[idref].flatMap(rootRelative)
         }
         guard !spine.isEmpty else { throw EpubError.emptySpine }
-        return EpubBook(spine: spine)
+        // EPUB 3 marks the cover in the manifest (`properties="cover-image"`); EPUB 2 points at
+        // it from `<meta name="cover" content="<id>"/>`. Either way it resolves via the manifest.
+        let coverHref = (opf.coverImageId ?? opf.coverMetaId).flatMap { opf.manifest[$0] }
+        func clean(_ text: String?) -> String? {
+            let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        return EpubBook(
+            spine: spine,
+            title: clean(opf.title),
+            author: clean(opf.creator),
+            coverPath: coverHref.flatMap(rootRelative)
+        )
     }
 }
 
@@ -108,11 +133,20 @@ private final class ContainerParser: NSObject, XMLParserDelegate {
     }
 }
 
-// MARK: - OPF (manifest + spine)
+// MARK: - OPF (manifest + spine + the Dublin Core a library tile needs)
 
 private final class OpfParser: NSObject, XMLParserDelegate {
     private(set) var manifest: [String: String] = [:] // id → href
     private(set) var spineIdrefs: [String] = []
+    private(set) var title: String?
+    private(set) var creator: String?
+    private(set) var coverImageId: String?
+    private(set) var coverMetaId: String?
+
+    /// Text of the Dublin Core element being read, or nil between elements.
+    private var textSink: String?
+    private var textTarget: TextTarget?
+    private enum TextTarget { case title, creator }
 
     static func parse(_ data: Data) -> OpfParser {
         let delegate = OpfParser()
@@ -126,17 +160,51 @@ private final class OpfParser: NSObject, XMLParserDelegate {
         _ parser: XMLParser, didStartElement elementName: String,
         namespaceURI: String?, qualifiedName: String?, attributes: [String: String]
     ) {
-        switch elementName {
+        // Namespaces aren't processed, so Dublin Core arrives prefixed ("dc:title"); match on the
+        // local part so either spelling works.
+        let local = elementName.split(separator: ":").last.map(String.init) ?? elementName
+        switch local {
         case "item":
             if let id = attributes["id"], let href = attributes["href"] {
                 manifest[id] = href
+                if coverImageId == nil,
+                   (attributes["properties"] ?? "").split(separator: " ").contains("cover-image") {
+                    coverImageId = id
+                }
             }
         case "itemref":
             if let idref = attributes["idref"] {
                 spineIdrefs.append(idref)
             }
+        case "meta":
+            if coverMetaId == nil, attributes["name"] == "cover" {
+                coverMetaId = attributes["content"]
+            }
+        case "title" where title == nil:
+            textTarget = .title
+            textSink = ""
+        case "creator" where creator == nil:
+            textTarget = .creator
+            textSink = ""
         default:
             break
         }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        textSink?.append(string)
+    }
+
+    func parser(
+        _ parser: XMLParser, didEndElement elementName: String,
+        namespaceURI: String?, qualifiedName: String?
+    ) {
+        guard let target = textTarget, let text = textSink else { return }
+        switch target {
+        case .title: title = text
+        case .creator: creator = text
+        }
+        textTarget = nil
+        textSink = nil
     }
 }

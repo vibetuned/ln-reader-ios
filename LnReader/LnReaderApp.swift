@@ -16,6 +16,7 @@ struct LnReaderApp: App {
         let engine = PlayerEngine(
             bookRepository: container.bookRepository,
             positionRepository: container.positionRepository,
+            readLogRepository: container.readLogRepository,
             fileStore: container.fileStore
         )
         _engine = State(initialValue: engine)
@@ -105,8 +106,13 @@ struct LnReaderApp: App {
             do {
                 for try await items in container.bookRepository.observeBooks() {
                     if let match = items.first(where: { $0.book.title.lowercased().hasPrefix(prefix) }) {
-                        await engine.open(bookId: match.id, autoPlay: false)
-                        navigation.selectedTab = .player
+                        // An EPUB-only book has no player to open; it goes to the reader.
+                        if match.book.hasAudio {
+                            await engine.open(bookId: match.id, autoPlay: false)
+                            navigation.selectedTab = .player
+                        } else {
+                            navigation.showReader(bookId: match.id)
+                        }
                     }
                     break
                 }
@@ -136,16 +142,25 @@ struct LnReaderApp: App {
         #endif
     }
 
-    /// On a fresh launch, reopen the last-played book paused at its saved
-    /// position and show the player (mirrors Android's resume-on-launch).
+    /// On a fresh launch, reopen whatever the user was last in: the most recent of the last
+    /// playback save and the last reading save decides the book. An audiobook comes back in the
+    /// player, paused at its position (mirrors Android's resume-on-launch); a book without audio
+    /// can only come back in the reader, at its saved page — its reading position is the only
+    /// record of where the user was.
     private func restoreLastBook() async {
         guard !container.lastBookRestoreHandled else { return }
         container.lastBookRestoreHandled = true
-        guard engine.book == nil,
-              let bookId = try? await container.positionRepository.lastPlayedBookId() else { return }
-        await engine.open(bookId: bookId, autoPlay: false)
-        if engine.book != nil {
-            navigation.selectedTab = .player
+        guard engine.book == nil, navigation.readerBookId == nil else { return }
+        let lastPlayed = try? await container.positionRepository.lastPlayed()
+        let lastRead = try? await container.readingPositionRepository.lastRead()
+        let candidates = [lastPlayed, lastRead].compactMap { $0 }
+        guard let latest = candidates.max(by: { $0.updatedAt < $1.updatedAt }),
+              let detail = try? await container.bookRepository.detail(bookId: latest.bookId) else { return }
+        if detail.book.hasAudio {
+            await engine.open(bookId: detail.book.id, autoPlay: false)
+            if engine.book != nil { navigation.selectedTab = .player }
+        } else {
+            navigation.showReader(bookId: detail.book.id)
         }
     }
 
@@ -166,13 +181,16 @@ struct LnReaderApp: App {
                 print("autoImport: imported \(book.title)")
                 // Attach sibling companions when they sit next to the m4b
                 // (ln-vox output layout: book.m4b + *.epub + sync_manifest.json).
-                let siblings = (try? FileManager.default.contentsOfDirectory(
-                    at: sourceURL.deletingLastPathComponent(), includingPropertiesForKeys: nil)) ?? []
-                if let epub = siblings.first(where: { $0.pathExtension == "epub" }) {
-                    try await container.bookRepository.attachEpub(bookId: book.id, from: epub)
-                }
-                if let sync = siblings.first(where: { $0.lastPathComponent == "sync_manifest.json" }) {
-                    try await container.bookRepository.attachSync(bookId: book.id, from: sync)
+                // An EPUB-only import is already the whole book — nothing to attach.
+                if book.hasAudio {
+                    let siblings = (try? FileManager.default.contentsOfDirectory(
+                        at: sourceURL.deletingLastPathComponent(), includingPropertiesForKeys: nil)) ?? []
+                    if let epub = siblings.first(where: { $0.pathExtension == "epub" }) {
+                        try await container.bookRepository.attachEpub(bookId: book.id, from: epub)
+                    }
+                    if let sync = siblings.first(where: { $0.lastPathComponent == "sync_manifest.json" }) {
+                        try await container.bookRepository.attachSync(bookId: book.id, from: sync)
+                    }
                 }
                 imported.append(book)
             } catch {
@@ -197,8 +215,12 @@ struct LnReaderApp: App {
 
         if arguments.contains("-autoPlay") {
             container.lastBookRestoreHandled = true
-            await engine.open(bookId: first.id, autoPlay: true)
-            navigation.selectedTab = .player
+            if first.hasAudio {
+                await engine.open(bookId: first.id, autoPlay: true)
+                navigation.selectedTab = .player
+            } else {
+                navigation.showReader(bookId: first.id)
+            }
         }
     }
     #endif

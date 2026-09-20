@@ -61,6 +61,7 @@ final class PlayerEngine {
 
     private let bookRepository: BookRepository
     private let positionRepository: PositionRepository
+    private let readLogRepository: ReadLogRepository
     private let fileStore: FileStore
 
     private let player = AVPlayer()
@@ -71,9 +72,19 @@ final class PlayerEngine {
     private var ticksSinceSave = 0
     private var wasPlayingBeforeInterruption = false
 
-    init(bookRepository: BookRepository, positionRepository: PositionRepository, fileStore: FileStore) {
+    /// The open `readLog` listen session, as a Task: the row is inserted asynchronously, and a
+    /// heartbeat or close landing before the insert returns must still address the right row.
+    private var listenSession: Task<String, Error>?
+
+    init(
+        bookRepository: BookRepository,
+        positionRepository: PositionRepository,
+        readLogRepository: ReadLogRepository,
+        fileStore: FileStore
+    ) {
         self.bookRepository = bookRepository
         self.positionRepository = positionRepository
+        self.readLogRepository = readLogRepository
         self.fileStore = fileStore
         // Speed is persisted app-wide across launches.
         let storedRate = UserDefaults.standard.double(forKey: "player.rate")
@@ -94,8 +105,16 @@ final class PlayerEngine {
             return
         }
         guard let detail = try? await bookRepository.detail(bookId: bookId) else { return }
+        // An EPUB-only book has no audio; the library routes it to the reader, and anything else
+        // landing here (a stale deep link) is refused rather than handed an empty URL.
+        guard detail.book.hasAudio else { return }
 
-        if book != nil { await savePosition() }
+        if book != nil {
+            await savePosition()
+            // Switching books is one session ending and another starting — playback alone
+            // wouldn't split them, since `isPlaying` may never dip between the two.
+            endListenSession()
+        }
 
         book = detail.book
         chapters = detail.chapters
@@ -148,6 +167,7 @@ final class PlayerEngine {
     /// Clears the loaded book (used when it's deleted from the library).
     func unload(bookId: String) {
         guard book?.id == bookId else { return }
+        endListenSession()
         detailObservationTask?.cancel()
         player.pause()
         player.replaceCurrentItem(with: nil)
@@ -210,12 +230,14 @@ final class PlayerEngine {
         if let remote {
             remote.play()
             isPlaying = true
+            beginListenSession()
             updateNowPlaying()
             return
         }
         try? AVAudioSession.sharedInstance().setActive(true)
         player.rate = Float(rate)
         isPlaying = true
+        beginListenSession()
         updateNowPlaying()
     }
 
@@ -224,12 +246,14 @@ final class PlayerEngine {
             remote.pause()
             isPlaying = false
             Task { await savePosition() }
+            endListenSession()
             updateNowPlaying()
             return
         }
         player.pause()
         isPlaying = false
         Task { await savePosition() }
+        endListenSession()
         updateNowPlaying()
     }
 
@@ -336,8 +360,33 @@ final class PlayerEngine {
             if ticksSinceSave >= Self.saveIntervalTicks {
                 ticksSinceSave = 0
                 Task { await savePosition() }
+                heartbeatListenSession()
             }
         }
+    }
+
+    // MARK: - readLog: listen sessions
+
+    private func beginListenSession() {
+        guard listenSession == nil, let book else { return }
+        let repository = readLogRepository
+        let id = book.id, title = book.title, position = positionMs
+        listenSession = Task { try await repository.start(bookId: id, bookTitle: title, kind: .listen, position: position) }
+    }
+
+    private func heartbeatListenSession() {
+        guard let session = listenSession else { return }
+        let repository = readLogRepository
+        let position = positionMs
+        Task { try? await repository.heartbeat(sessionId: try await session.value, position: position) }
+    }
+
+    private func endListenSession() {
+        guard let session = listenSession else { return }
+        listenSession = nil
+        let repository = readLogRepository
+        let position = positionMs
+        Task { try? await repository.end(sessionId: try await session.value, position: position) }
     }
 
     private func installItemEndObserver(for item: AVPlayerItem) {
@@ -350,6 +399,7 @@ final class PlayerEngine {
                 self.isPlaying = false
                 if let duration = self.book?.durationMs { self.positionMs = duration }
                 Task { await self.savePosition() }
+                self.endListenSession()
                 self.updateNowPlaying()
                 if let finished = self.book {
                     self.onBookFinished?(finished)

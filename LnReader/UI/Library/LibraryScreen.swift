@@ -97,6 +97,7 @@ private struct LibraryContent: View {
 
     private static let m4bType = UTType(filenameExtension: "m4b", conformingTo: .audiovisualContent)
         ?? .mpeg4Audio
+    private static let epubType = UTType(filenameExtension: "epub") ?? .zip
 
     private var isEmpty: Bool {
         model.sortedItems.isEmpty && (collectionName != nil || model.collections.isEmpty)
@@ -108,7 +109,7 @@ private struct LibraryContent: View {
                 ContentUnavailableView(
                     collectionName == nil ? "No books yet" : "Empty collection",
                     systemImage: "books.vertical",
-                    description: Text("Tap + to import an .m4b audiobook.")
+                    description: Text("Tap + to import an .m4b audiobook or an .epub book.")
                 )
             } else {
                 grid
@@ -135,7 +136,7 @@ private struct LibraryContent: View {
         }
         .fileImporter(
             isPresented: $showImporter,
-            allowedContentTypes: [Self.m4bType, .mpeg4Audio]
+            allowedContentTypes: [Self.m4bType, .mpeg4Audio, Self.epubType, .epub]
         ) { result in
             if case .success(let url) = result {
                 Task { await model.importBook(from: url) }
@@ -212,7 +213,7 @@ private struct LibraryContent: View {
                     Button {
                         showImporter = true
                     } label: {
-                        Label("Import book", systemImage: "waveform")
+                        Label("Import book", systemImage: "square.and.arrow.down")
                     }
                     Button {
                         activeSheet = .newCollection
@@ -257,7 +258,10 @@ private struct LibraryContent: View {
                             Button {
                                 play(item)
                             } label: {
-                                Label("Open", systemImage: "play.fill")
+                                Label(
+                                    item.book.hasAudio ? "Open" : "Read",
+                                    systemImage: item.book.hasAudio ? "play.fill" : "book"
+                                )
                             }
                             Button {
                                 activeSheet = .detail(item)
@@ -279,7 +283,12 @@ private struct LibraryContent: View {
         }
     }
 
+    /// "Open" from the grid: play an audiobook, read an EPUB-only book.
     private func play(_ item: BookListItem) {
+        guard item.book.hasAudio else {
+            navigation.showReader(bookId: item.book.id)
+            return
+        }
         Task { await engine.open(bookId: item.book.id, autoPlay: true) }
         navigation.selectedTab = .player
     }
@@ -388,7 +397,32 @@ private struct BookGridCell: View {
                 .font(.footnote)
                 .lineLimit(2, reservesSpace: true)
                 .multilineTextAlignment(.leading)
+            // How long, or how far: an audiobook is measured in time, an EPUB-only book in
+            // pages, so the same line reads "9h 26m" or "6 / 45" (matching Android's tile).
+            Text(extentLabel)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.top, -2)
         }
+    }
+
+    /// The page total comes from the book row (recorded at import). Rows imported before that
+    /// column existed fall back to the count the reader wrote alongside the reading position;
+    /// with neither, the format is all we can honestly say.
+    private var extentLabel: String {
+        let book = item.book
+        guard !book.hasAudio else { return Self.formatDuration(ms: book.durationMs) }
+        let total = book.spineCount > 0 ? book.spineCount : (item.readingPosition?.spineCount ?? 0)
+        guard total > 0 else { return "EPUB" }
+        let page = min(max(1, (item.readingPosition?.spineIndex ?? 0) + 1), total)
+        return "\(page) / \(total)"
+    }
+
+    static func formatDuration(ms: Int64) -> String {
+        guard ms > 0 else { return "—" }
+        let minutes = ms / 60_000
+        let hours = minutes / 60
+        return hours > 0 ? "\(hours)h \(minutes % 60)m" : "\(minutes)m"
     }
 }
 

@@ -31,11 +31,27 @@ public final class PositionRepository: Sendable {
 
     /// The book with the most recently saved position — resume-on-launch.
     public func lastPlayedBookId() async throws -> String? {
+        try await lastPlayed()?.bookId
+    }
+
+    /// The most recent playback save, with its timestamp — weighed against the last reading save.
+    public func lastPlayed() async throws -> LastActivity? {
         try await database.writer.read { db in
             try PlaybackPosition
                 .order(Column("updatedAt").desc)
-                .fetchOne(db)?
-                .bookId
+                .fetchOne(db)
+                .map { LastActivity(bookId: $0.bookId, updatedAt: $0.updatedAt) }
         }
+    }
+}
+
+/// A "the user was last here" marker: which book, and when.
+public struct LastActivity: Equatable, Sendable {
+    public let bookId: String
+    public let updatedAt: Date
+
+    public init(bookId: String, updatedAt: Date) {
+        self.bookId = bookId
+        self.updatedAt = updatedAt
     }
 }

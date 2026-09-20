@@ -36,6 +36,8 @@ struct ReaderScreen: View {
             if model == nil {
                 let model = ReaderViewModel(
                     repository: container.bookRepository,
+                    readingPositionRepository: container.readingPositionRepository,
+                    readLogRepository: container.readLogRepository,
                     fileStore: container.fileStore,
                     engine: engine
                 )
@@ -50,6 +52,15 @@ struct ReaderScreen: View {
 private struct ReaderContent: View {
     @Bindable var model: ReaderViewModel
     @Environment(PlayerEngine.self) private var engine
+
+    /// A book with no audio of its own has no narration to control, so the bar would only be
+    /// offering transport for some unrelated audiobook while you read. It stays hidden there
+    /// unless that other book is actually playing, in which case the controls are still wanted.
+    private var showsMiniPlayer: Bool {
+        guard engine.book != nil else { return false }
+        guard let book = model.book, !book.hasAudio else { return true }
+        return engine.isPlaying
+    }
 
     var body: some View {
         Group {
@@ -68,7 +79,7 @@ private struct ReaderContent: View {
                         }
                     }
                     .safeAreaInset(edge: .bottom) {
-                        if engine.book != nil {
+                        if showsMiniPlayer {
                             MiniPlayer()
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 4)

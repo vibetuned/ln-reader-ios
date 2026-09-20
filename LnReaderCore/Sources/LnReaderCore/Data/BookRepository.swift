@@ -11,16 +11,27 @@ public enum ImportError: Error {
     case unreadableSource(URL)
 }
 
-/// A book joined with its saved playback position (drives the library progress bars).
+/// A book joined with its saved place (drives the library progress bars): the playback position
+/// for an audiobook, the reading position for an EPUB-only book.
 public struct BookListItem: Equatable, Identifiable, Sendable {
     public let book: Book
     public let positionMs: Int64?
+    public let readingPosition: ReadingPosition?
     public var id: String { book.id }
 
-    /// 0…1 whole-book progress, nil when never played.
+    public init(book: Book, positionMs: Int64?, readingPosition: ReadingPosition? = nil) {
+        self.book = book
+        self.positionMs = positionMs
+        self.readingPosition = readingPosition
+    }
+
+    /// 0…1 whole-book progress, nil when never opened.
     public var progress: Double? {
-        guard let positionMs, book.durationMs > 0 else { return nil }
-        return min(1, max(0, Double(positionMs) / Double(book.durationMs)))
+        if book.hasAudio {
+            guard let positionMs, book.durationMs > 0 else { return nil }
+            return min(1, max(0, Double(positionMs) / Double(book.durationMs)))
+        }
+        return readingPosition?.fraction
     }
 }
 
@@ -48,7 +59,11 @@ public final class BookRepository: Sendable {
                 let books = try Book.fetchAll(db)
                 let positions = try PlaybackPosition.fetchAll(db)
                 let positionsByBook = Dictionary(uniqueKeysWithValues: positions.map { ($0.bookId, $0.positionMs) })
-                return books.map { BookListItem(book: $0, positionMs: positionsByBook[$0.id]) }
+                let reading = try ReadingPosition.fetchAll(db)
+                let readingByBook = Dictionary(uniqueKeysWithValues: reading.map { ($0.bookId, $0) })
+                return books.map {
+                    BookListItem(book: $0, positionMs: positionsByBook[$0.id], readingPosition: readingByBook[$0.id])
+                }
             }
             .values(in: database.writer)
     }
@@ -97,15 +112,98 @@ public final class BookRepository: Sendable {
 
     // MARK: - Import
 
-    /// Copies the source m4b into the app's file store, parses it, extracts the
-    /// embedded images, and inserts the book. The caller is responsible for
-    /// security-scoped access to `sourceURL` for the duration of the call.
-    /// Any failure cleans up the partial files.
+    /// Imports a picked file: an .epub becomes an EPUB-only book (`importEpub`), anything else
+    /// is treated as an .m4b audiobook. The caller is responsible for security-scoped access to
+    /// `sourceURL` for the duration of the call. Any failure cleans up the partial files.
     @discardableResult
     public func importBook(
         from sourceURL: URL,
         collectionId: String? = nil,
         onProgress: @escaping @Sendable (ImportPhase) -> Void = { _ in }
+    ) async throws -> Book {
+        if sourceURL.pathExtension.lowercased() == "epub" {
+            return try await importEpub(from: sourceURL, collectionId: collectionId, onProgress: onProgress)
+        }
+        return try await importAudio(from: sourceURL, collectionId: collectionId, onProgress: onProgress)
+    }
+
+    /// A book that is only an EPUB — no audio, so nothing for the player; it lives entirely in the
+    /// reader, which keeps its place through `readingPosition`. The file is copied to the same
+    /// spot an attached companion would use (`companions/<id>/book.epub`) and extracted where the
+    /// reader expects it, so everything downstream treats it like an audiobook whose EPUB
+    /// companion happens to be the whole book. Title, author and cover come from the OPF.
+    @discardableResult
+    public func importEpub(
+        from sourceURL: URL,
+        collectionId: String? = nil,
+        onProgress: @escaping @Sendable (ImportPhase) -> Void = { _ in }
+    ) async throws -> Book {
+        let bookId = UUID().uuidString
+        let fm = FileManager.default
+        do {
+            let companions = fileStore.companionsDir(bookId: bookId)
+            try fm.createDirectory(at: companions, withIntermediateDirectories: true)
+            let epubURL = companions.appendingPathComponent("book.epub")
+            let totalBytes = (try? sourceURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+                .map(Int64.init) ?? 0
+            onProgress(.copying(bytesCopied: 0, totalBytes: totalBytes))
+            let copied = try Self.copyFile(from: sourceURL, to: epubURL) { bytesCopied in
+                onProgress(.copying(bytesCopied: bytesCopied, totalBytes: totalBytes))
+            }
+
+            onProgress(.parsing)
+            let extractionDir = fileStore.epubExtractionDir(bookId: bookId)
+            try EpubReader.ensureExtracted(epubURL: epubURL, to: extractionDir)
+            let parsed = try EpubReader.parse(extractedDir: extractionDir)
+
+            // Copy the cover out to the usual images dir so coverPath means the same thing it does
+            // for an audiobook (and survives the extraction dir being rebuilt).
+            var coverPath: String?
+            if let relative = parsed.coverPath {
+                let source = extractionDir.appendingPathComponent(relative)
+                if fm.fileExists(atPath: source.path) {
+                    let imagesDir = fileStore.imagesDir(bookId: bookId)
+                    try fm.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+                    let ext = source.pathExtension.isEmpty ? "img" : source.pathExtension.lowercased()
+                    let destination = imagesDir.appendingPathComponent("0.\(ext)")
+                    try? fm.removeItem(at: destination)
+                    try fm.copyItem(at: source, to: destination)
+                    coverPath = fileStore.relativePath(of: destination)
+                }
+            }
+
+            onProgress(.finalizing)
+            let fileName = sourceURL.deletingPathExtension().lastPathComponent
+            let book = Book(
+                id: bookId,
+                title: parsed.title ?? fileName,
+                author: parsed.author,
+                album: nil,
+                durationMs: 0,
+                audioPath: "",
+                coverPath: coverPath,
+                fileSize: copied,
+                importedAt: Date(),
+                epubPath: fileStore.relativePath(of: epubURL),
+                syncPath: nil,
+                collectionId: collectionId,
+                mediaKind: MediaKind.epub,
+                spineCount: parsed.spine.count
+            )
+            try await database.writer.write { db in try book.insert(db) }
+            return book
+        } catch {
+            fileStore.deleteBookFiles(bookId: bookId)
+            throw error
+        }
+    }
+
+    /// Copies the source m4b into the app's file store, parses it, extracts the
+    /// embedded images, and inserts the book.
+    private func importAudio(
+        from sourceURL: URL,
+        collectionId: String?,
+        onProgress: @escaping @Sendable (ImportPhase) -> Void
     ) async throws -> Book {
         let bookId = UUID().uuidString
         let fm = FileManager.default

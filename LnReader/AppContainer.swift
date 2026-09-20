@@ -30,6 +30,10 @@ final class AppContainer {
 
     private(set) lazy var collectionRepository = CollectionRepository(database: database)
 
+    private(set) lazy var readingPositionRepository = ReadingPositionRepository(database: database)
+
+    private(set) lazy var readLogRepository = ReadLogRepository(database: database)
+
     /// Guards "reopen last book once per launch" — process-scoped, like Android's
     /// AppContainer.lastBookRestoreHandled.
     var lastBookRestoreHandled = false

@@ -75,6 +75,44 @@ public struct AppDatabase: Sendable {
             }
         }
 
+        // v2: EPUB-only books and the usage log (mirrors Android Room v6).
+        // - `book.mediaKind` tells an EPUB-only book from an audiobook; existing rows are audio.
+        // - `readingPosition` is the reader's saved place per book, the EPUB counterpart of
+        //   `position`; it cascades with the book like `position` does.
+        // - `readLog` records listening / reading sessions for the usage time-series. No foreign
+        //   key on purpose: history should survive the book leaving the library.
+        migrator.registerMigration("v2") { db in
+            try db.alter(table: "book") { t in
+                t.add(column: "mediaKind", .text).notNull().defaults(to: MediaKind.audio)
+            }
+            try db.create(table: "readingPosition") { t in
+                t.primaryKey("bookId", .text)
+                    .references("book", onDelete: .cascade)
+                t.column("spineIndex", .integer).notNull()
+                t.column("scrollFraction", .double).notNull()
+                t.column("spineCount", .integer).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(table: "readLog") { t in
+                t.primaryKey("id", .text)
+                t.column("bookId", .text).notNull().indexed()
+                t.column("bookTitle", .text).notNull()
+                t.column("kind", .text).notNull()
+                t.column("startedAt", .datetime).notNull().indexed()
+                t.column("endedAt", .datetime).notNull()
+                t.column("startPosition", .integer).notNull()
+                t.column("endPosition", .integer).notNull()
+            }
+        }
+
+        // v3: `book.spineCount` — an EPUB-only book's page count, taken at import so the library
+        // tile can read "6 / 45" without opening the EPUB. Audiobooks keep the default 0.
+        migrator.registerMigration("v3") { db in
+            try db.alter(table: "book") { t in
+                t.add(column: "spineCount", .integer).notNull().defaults(to: 0)
+            }
+        }
+
         return migrator
     }
 }

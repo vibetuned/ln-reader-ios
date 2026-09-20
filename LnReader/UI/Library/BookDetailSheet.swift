@@ -41,18 +41,22 @@ struct BookDetailSheet: View {
                 header
 
                 Section {
-                    Button {
-                        Task { await engine.open(bookId: book.id, autoPlay: true) }
-                        navigation.selectedTab = .player
-                        dismiss()
-                    } label: {
-                        Label("Open", systemImage: "play.fill")
-                    }
-                    Button {
-                        navigation.showImages(bookId: book.id)
-                        dismiss()
-                    } label: {
-                        Label("View images", systemImage: "photo.on.rectangle")
+                    // An EPUB-only book has nothing to play and no embedded images: its whole
+                    // primary action is the reader.
+                    if book.hasAudio {
+                        Button {
+                            Task { await engine.open(bookId: book.id, autoPlay: true) }
+                            navigation.selectedTab = .player
+                            dismiss()
+                        } label: {
+                            Label("Open", systemImage: "play.fill")
+                        }
+                        Button {
+                            navigation.showImages(bookId: book.id)
+                            dismiss()
+                        } label: {
+                            Label("View images", systemImage: "photo.on.rectangle")
+                        }
                     }
                     if book.epubPath != nil {
                         Button {
@@ -65,7 +69,11 @@ struct BookDetailSheet: View {
                 }
 
                 collectionSection
-                companionsSection
+                // Companions belong to an audiobook: for an EPUB-only book the EPUB *is* the
+                // book, and a sync manifest has no narration to sync to.
+                if book.hasAudio {
+                    companionsSection
+                }
 
                 Section {
                     Button(role: .destructive) {
@@ -132,7 +140,7 @@ struct BookDetailSheet: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    Text(duration)
+                    Text(book.hasAudio ? duration : "EPUB")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(size)

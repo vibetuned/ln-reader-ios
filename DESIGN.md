@@ -65,7 +65,10 @@ bare Command Line Tools, so parser/model logic is testable without a simulator.
   migrator — same policy as Android. Schema v1 mirrors Room v5 minus the
   Android-only columns: no `uri`/`isDownloaded` (iOS has no SAF; every import
   copies the picked file into the app container, so the app owns all audio
-  files), no vestigial `syncKey`.
+  files), no vestigial `syncKey`. **v2** mirrors Room v6: `book.mediaKind`,
+  plus the `readingPosition` and `readLog` tables (see [EPUB-only
+  books](#epub-only-books) and [Usage log](#usage-log)). **v3** adds
+  `book.spineCount` (Room v7's counterpart).
 - **Paths are stored relative** to `FileStore.baseURL` (Application Support/
   LnReader) because the iOS container path changes across app updates/restores.
 - Repositories live in LnReaderCore and are tested with `swift test` on macOS
@@ -86,9 +89,78 @@ Deviation from Android: there is no local-vs-remote distinction — iOS always
 copies (Android only copied cloud SAF sources). Same duplicate-on-reimport
 limitation as Android (UUID-keyed, no content hashing).
 
+An `.epub` picked instead of an `.m4b` routes to `importEpub` — see [EPUB-only
+books](#epub-only-books).
+
 Dev hook (DEBUG builds): `xcrun simctl launch booted com.vibetuned.lnreader
 -autoImport <host path>` imports a book without driving the file picker — the
-simulator can read host paths. Handy for smoke tests with real books.
+simulator can read host paths. Handy for smoke tests with real books. The
+Android app has the same hooks as Intent extras; see its DESIGN.md.
+
+## EPUB-only books
+
+A library entry can be an EPUB with no audio. `book.mediaKind` (`audio` /
+`epub`) is the flag; `audioPath` stays `""` and `durationMs` `0` for an
+EPUB-only book, so **read `hasAudio`, never infer from those**. Keeping a flag
+beside a NOT NULL `audioPath` avoids rebuilding the table on installed
+databases.
+
+- **Import** (`BookRepository.importEpub`) copies the file to
+  `companions/<id>/book.epub` — the same place an attached companion lives —
+  extracts it to `epubs/<id>/`, and takes title, author and cover from the OPF
+  (`EpubReader.parse` now returns them). The cover is copied out to
+  `books/<id>/images/0.<ext>` so `coverPath` means the same thing it does for
+  an audiobook and survives the extraction dir being rebuilt. Everything
+  downstream then treats the book as an audiobook whose EPUB companion happens
+  to be the whole book.
+- **Library tile.** The third line answers "how much of this is there": an
+  audiobook's running time (`9h 26m`), or an EPUB-only book's place in its pages
+  (`6 / 45`) — the line Android already had and iOS was missing. The total comes
+  from `book.spineCount`; rows imported before that column existed fall back to
+  the count the reader saved on `readingPosition`, and with neither we can only
+  honestly say `EPUB`.
+- **Cover resolution** handles both spellings: EPUB 3's manifest
+  `properties="cover-image"` and EPUB 2's `<meta name="cover" content="<id>"/>`,
+  each resolved through the manifest.
+- **No player.** `PlayerEngine.open` refuses a book without audio, the library's
+  Open action and the detail sheet's primary button become *Read*, image and
+  companion sections are hidden, and `CollectionAdvanceController` skips
+  EPUB-only neighbours when advancing a listening run.
+
+## Reading position
+
+`readingPosition` (bookId, spineIndex, scrollFraction, spineCount, updatedAt) is
+the reader's saved place — the EPUB counterpart of `position`. An audiobook's
+reader follows the narration, so it only matters when there is none to follow:
+`ReaderViewModel.load` restores from it whenever the book isn't the one playing,
+and the reader samples the page's scroll offset (1.5 s, only writing on a real
+move) as you read. Restore runs twice, 300 ms apart, because a page with images
+grows after `didFinish` and a single early scroll lands short.
+
+`spineCount` rides along so the library can draw an EPUB-only book's progress
+bar (`BookListItem.progress` falls back to it) without opening the EPUB.
+
+**Resume on launch** now weighs `positionRepository.lastPlayed()` against
+`readingPositionRepository.lastRead()` and reopens whichever is newer — the
+player for an audiobook, the reader for a book without audio.
+
+## Usage log
+
+`readLog` records one row per listening or reading session, for a time-series
+view later: id, bookId, a snapshotted bookTitle, kind (`listen` / `read`),
+startedAt/endedAt, and start/end position (playback ms, or spine index for a
+read).
+
+A row's life is start → heartbeat… → end. It opens with `endedAt == startedAt`;
+while the session runs a heartbeat advances `endedAt` (5 s from `PlayerEngine`'s
+save tick, 10 s in the reader), so a process killed mid-session still leaves an
+honest duration; ending closes it. `PlayerEngine` opens a session on play and
+closes it on pause, book switch, item end and unload; `ReaderViewModel` opens
+one per book load and closes it in `stop()` (detached, so it survives teardown).
+
+**Rows have no foreign key and outlive their book on purpose** — deleting a
+finished book shouldn't erase the hours spent on it, which is why the title is
+snapshotted into the row.
 
 ## Player
 
@@ -111,7 +183,11 @@ needs no service boundary: the `audio` background mode plus an active
 - Interruption handling (calls, other audio) pauses and auto-resumes when the
   system says `.shouldResume`.
 - The mini-player reads the same engine directly (no separate state holder,
-  like Android's controller-reading MiniPlayer).
+  like Android's controller-reading MiniPlayer). While the reader is showing an
+  **EPUB-only** book it hides (`ReaderContent.showsMiniPlayer`): that book has no
+  narration to control, so the bar would only offer transport for an unrelated
+  audiobook. The exception is live playback — if audio is actually playing it
+  stays, so the controls remain within reach.
 
 ## Sleep timer
 
