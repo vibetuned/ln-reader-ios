@@ -29,9 +29,12 @@ LnReader/                      app target (UI + platform integrations)
     ├── Library/  Player/  Viewer/  Timer/  Reader/  Common/
 ```
 
-No Settings tab (unlike Android): its only real setting there is the download
-location, which doesn't exist on iOS — imports are always copied into the app
-container. Reader/player preferences live where they're used (toolbars).
+Tabs: Library, Player, Images, **Settings** — matching Android, which folded its
+Timer tab into Settings for the same reason (a setting you adjust occasionally,
+not a destination). Android's Settings has two sections, Downloads and Sleep
+timer; iOS has no download location to choose (imports are always copied into
+the app container), so the timer is its only section for now. Reader/player
+preferences still live where they're used (toolbars).
 
 ```
 LnReaderCore/                  Swift package — pure logic, no UIKit/SwiftUI
@@ -183,13 +186,48 @@ needs no service boundary: the `audio` background mode plus an active
 - Interruption handling (calls, other audio) pauses and auto-resumes when the
   system says `.shouldResume`.
 - The mini-player reads the same engine directly (no separate state holder,
-  like Android's controller-reading MiniPlayer). While the reader is showing an
+  like Android's controller-reading MiniPlayer). It is an `overlay` on the
+  `TabView` — a floating iOS-style bar rather than part of the layout — so it
+  contributes **no safe area** and scroll views run underneath it. Screens whose
+  last element matters reserve the space with `.miniPlayerInset()`
+  (`UI/Common/MiniPlayerInset.swift`): Settings, whose Start/Update timer button
+  sits exactly where the bar floats, and the library grid's bottom row. The
+  reader is exempt — it hosts the bar as a real `safeAreaInset` of its own. While the reader is showing an
   **EPUB-only** book it hides (`ReaderContent.showsMiniPlayer`): that book has no
   narration to control, so the bar would only offer transport for an unrelated
   audiobook. The exception is live playback — if audio is actually playing it
   stays, so the controls remain within reach.
 
+## Usage statistics
+
+The Settings tab charts how long each book has been open — listening and reading together, since
+both are `readLog` sessions. `ReadingStatsBuilder` (LnReaderCore, unit-tested) is a twin of
+Android's, with the same rules so the two charts can't drift: calendar-aligned buckets, sessions
+**clipped** to every bucket they overlap rather than counted whole in the one they started in, and
+books ordered by their share of the window — an order the shades follow too.
+
+Windows: 14 days, 12 weeks, 12 months, 5 years. `windowStart` lets the repository fetch only
+sessions reaching into the charted window.
+
+- **Chart** (`UI/Stats/StatsSection.swift`) uses **Swift Charts**, where Android draws the bars
+  from layout. Same `ReadingStats` buckets, native rendering on each side. `BookShade` mirrors
+  Android's palette order exactly.
+- **History** (`UI/Stats/SessionsScreen.swift`) is **paged**: `SessionsModel` appends 30 rows at a
+  time as the tail comes into view. Deliberately not an `AsyncValueObservation` — re-running a
+  whole-table observation on every appended session would defeat the paging.
+
+Dev hook: `-seedStats [-seedDays n]` replaces the log with generated sessions (deterministic, so
+reruns look the same), the counterpart of Android's `--ez seedStats`.
+
 ## Sleep timer
+
+`TimerControls` is shared by the Settings tab and the player's timer drawer. The
+setup controls stay on screen **while a timer runs**, so an armed timer can be
+changed rather than only cancelled: picking new values and tapping *Update*
+restarts it (`start` cancels first), which is what Android's chips have always
+done. The countdown and the expiry prompt sit above the controls as their own
+sections instead of replacing them, and the pickers seed themselves from a
+running timer's config so Update starts from what is actually armed.
 
 `SleepTimerController` drives playback through the same `PlayerEngine` the UI
 uses (like Android's controller sharing the MediaController). Time mode counts

@@ -22,9 +22,9 @@ struct RootView: View {
             ViewerScreen()
                 .tabItem { Label("Images", systemImage: "photo.on.rectangle") }
                 .tag(RootTab.images)
-            TimerScreen()
-                .tabItem { Label("Timer", systemImage: "moon.zzz") }
-                .tag(RootTab.timer)
+            SettingsScreen()
+                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tag(RootTab.settings)
         }
         .overlay(alignment: .bottom) {
             if engine.book != nil, navigation.selectedTab != .player {

@@ -82,12 +82,12 @@ struct LnReaderApp: App {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-armChapterTimer") {
             sleepTimer.start(SleepTimerConfig(mode: .chapters(count: 1), fadeOutSeconds: 10))
-            navigation.selectedTab = .timer
+            navigation.selectedTab = .settings
         }
         if let index = arguments.firstIndex(of: "-armTimer"), index + 1 < arguments.count,
            let minutes = Int(arguments[index + 1]) {
             sleepTimer.start(SleepTimerConfig(mode: .time(minutes: minutes), fadeOutSeconds: 10))
-            navigation.selectedTab = .timer
+            navigation.selectedTab = .settings
         }
         if arguments.contains("-showImages") {
             navigation.selectedTab = .images
@@ -135,7 +135,8 @@ struct LnReaderApp: App {
             case "library": navigation.selectedTab = .library
             case "player": navigation.selectedTab = .player
             case "images": navigation.selectedTab = .images
-            case "timer": navigation.selectedTab = .timer
+            // "timer" still resolves, so existing scripts keep working after the merge.
+            case "timer", "settings": navigation.selectedTab = .settings
             default: break
             }
         }
@@ -197,6 +198,12 @@ struct LnReaderApp: App {
                 print("autoImport failed: \(error)")
             }
         }
+        if arguments.contains("-seedStats") {
+            let days = arguments.firstIndex(of: "-seedDays")
+                .flatMap { $0 + 1 < arguments.count ? Int(arguments[$0 + 1]) : nil } ?? 120
+            await seedStats(days: days)
+        }
+
         guard let first = imported.first else { return }
 
         if arguments.contains("-testCollectionAdvance") {
@@ -223,5 +230,68 @@ struct LnReaderApp: App {
             }
         }
     }
+    /// Replaces the usage log with generated sessions so the stats chart has something to show.
+    ///
+    /// Deterministic (seeded off each day) so a rerun produces the same history and screenshots
+    /// stay comparable, and shaped like real use rather than uniform noise: a few sessions a day
+    /// at plausible hours and lengths, mostly listening, weighted so the first books in the
+    /// library dominate — a flat distribution would make every bar the same height and hide
+    /// whether the stack works. Mirrors Android's `--ez seedStats`.
+    private func seedStats(days: Int) async {
+        let library = (try? await allBooks()) ?? []
+        guard !library.isEmpty else {
+            print("seedStats: no books in the library, nothing to attribute to")
+            return
+        }
+        var calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var sessions: [ReadLogEntry] = []
+
+        for dayOffset in stride(from: days, through: 0, by: -1) {
+            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
+            var rng = SeededRandom(seed: UInt64(Int(date.timeIntervalSince1970) / 86_400))
+            // Most days have some listening; a third are quiet, which gives the chart gaps.
+            let roll = rng.next(upTo: 100)
+            let count = roll <= 32 ? 0 : (roll <= 70 ? 1 : (roll <= 92 ? 2 : 3))
+            var hours = [8, 12, 18, 21]
+            for i in 0..<count {
+                // Books early in the library get picked more often, so totals differ visibly.
+                let weighted = rng.next(upTo: library.count * (library.count + 1) / 2)
+                var index = 0, acc = library.count
+                while acc <= weighted && index < library.count - 1 { index += 1; acc += library.count - index }
+                let book = library[index]
+                let minutes = 8 + rng.next(upTo: 68)
+                let hour = hours[i % hours.count]
+                guard let start = calendar.date(bySettingHour: hour, minute: rng.next(upTo: 60),
+                                                second: 0, of: date) else { continue }
+                let kind: ReadLogKind = (book.hasAudio && rng.next(upTo: 100) < 78) ? .listen : .read
+                sessions.append(ReadLogEntry(
+                    id: "seed-\(Int(date.timeIntervalSince1970))-\(i)",
+                    bookId: book.id, bookTitle: book.title, kind: kind,
+                    startedAt: start, endedAt: start.addingTimeInterval(Double(minutes) * 60),
+                    startPosition: 0, endPosition: Int64(minutes) * 60_000))
+            }
+        }
+        try? await container.readLogRepository.replaceAll(sessions)
+        print("seedStats: wrote \(sessions.count) sessions over \(days) days")
+    }
+
+    /// The whole library, however it is filed — `books(inCollection:)` only returns members.
+    private func allBooks() async throws -> [Book] {
+        var iterator = container.bookRepository.observeBooks().makeAsyncIterator()
+        return (try await iterator.next())?.map(\.book) ?? []
+    }
     #endif
 }
+
+#if DEBUG
+/// Tiny reproducible generator — `SystemRandomNumberGenerator` would make every seeded run differ.
+private struct SeededRandom {
+    private var state: UInt64
+    init(seed: UInt64) { state = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407 }
+    mutating func next(upTo bound: Int) -> Int {
+        state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+        return bound <= 0 ? 0 : Int((state >> 33) % UInt64(bound))
+    }
+}
+#endif

@@ -203,6 +203,8 @@ private struct LibraryContent: View {
         }
         .task { await model.observeBooks() }
         .task { await model.observeCollections() }
+        // The grid's bottom row would otherwise sit under the floating mini-player.
+        .miniPlayerInset()
     }
 
     private var addButton: some View {

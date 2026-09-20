@@ -72,4 +72,41 @@ public final class ReadLogRepository: Sendable {
             try ReadLogEntry.filter(Column("bookId") == bookId).order(Column("startedAt")).fetchAll(db)
         }
     }
+
+    /// Sessions bucketed for the usage chart. Only rows reaching into the charted window are
+    /// read, so the query stays small however long the history gets.
+    public func stats(
+        granularity: StatsGranularity,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) async throws -> ReadingStats {
+        let from = ReadingStatsBuilder.windowStart(granularity, now: now, calendar: calendar)
+        let entries = try await database.writer.read { db in
+            try ReadLogEntry.filter(Column("endedAt") >= from).order(Column("startedAt")).fetchAll(db)
+        }
+        return ReadingStatsBuilder.build(
+            entries: entries, granularity: granularity, now: now, calendar: calendar)
+    }
+
+    /// One page of history, newest first — the details list loads these as it scrolls.
+    public func page(limit: Int, offset: Int) async throws -> [ReadLogEntry] {
+        try await database.writer.read { db in
+            try ReadLogEntry
+                .order(Column("startedAt").desc)
+                .limit(limit, offset: offset)
+                .fetchAll(db)
+        }
+    }
+
+    public func count() async throws -> Int {
+        try await database.writer.read { db in try ReadLogEntry.fetchCount(db) }
+    }
+
+    /// Replaces all history. Debug seeding only — nothing in the app deletes the log.
+    public func replaceAll(_ entries: [ReadLogEntry]) async throws {
+        try await database.writer.write { db in
+            _ = try ReadLogEntry.deleteAll(db)
+            for entry in entries { try entry.insert(db) }
+        }
+    }
 }

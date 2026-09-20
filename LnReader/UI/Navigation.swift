@@ -2,7 +2,9 @@ import Foundation
 import Observation
 
 enum RootTab: Hashable {
-    case library, player, images, timer
+    // The sleep timer lives inside Settings rather than owning a tab of its own, matching
+    // Android — it is a setting you adjust occasionally, not a destination.
+    case library, player, images, settings
 }
 
 /// Process-scoped navigation state, so non-UI code (mini-player taps,

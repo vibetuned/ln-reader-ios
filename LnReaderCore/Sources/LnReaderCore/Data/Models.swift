@@ -96,6 +96,22 @@ public struct ReadLogEntry: Codable, Equatable, Identifiable, Sendable {
     public var startPosition: Int64
     public var endPosition: Int64
 
+    /// Swift only synthesises an *internal* memberwise init for a public struct, so the app
+    /// target (and the debug seeder) needs this one spelled out.
+    public init(
+        id: String, bookId: String, bookTitle: String, kind: ReadLogKind,
+        startedAt: Date, endedAt: Date, startPosition: Int64, endPosition: Int64
+    ) {
+        self.id = id
+        self.bookId = bookId
+        self.bookTitle = bookTitle
+        self.kind = kind
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.startPosition = startPosition
+        self.endPosition = endPosition
+    }
+
     public var duration: TimeInterval { max(0, endedAt.timeIntervalSince(startedAt)) }
 }
 
