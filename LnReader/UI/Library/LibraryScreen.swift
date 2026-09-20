@@ -71,6 +71,7 @@ private struct LibraryContent: View {
     @Environment(PlayerEngine.self) private var engine
     @Environment(AppNavigation.self) private var navigation
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var showImporter = false
     @State private var activeSheet: ActiveSheet?
@@ -238,9 +239,18 @@ private struct LibraryContent: View {
         .disabled(model.importPhase != nil)
     }
 
+    /// An adaptive grid fits as many columns as the minimum allows, so the phone's minimum on an
+    /// iPad gives six thin covers across and a shelf that reads as a strip along the top. A
+    /// regular-width screen asks for wider tiles instead, which lands on four — the same shape
+    /// the Android tablet layout has.
+    private var gridColumns: [GridItem] {
+        let wide = horizontalSizeClass == .regular
+        return [GridItem(.adaptive(minimum: wide ? 200 : 130, maximum: wide ? 280 : 190), spacing: 16)]
+    }
+
     private var grid: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130, maximum: 190), spacing: 16)], spacing: 20) {
+            LazyVGrid(columns: gridColumns, spacing: 20) {
                 if collectionName == nil {
                     ForEach(model.collections) { item in
                         NavigationLink(value: CollectionRoute(id: item.id, name: item.collection.name)) {

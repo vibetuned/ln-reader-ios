@@ -75,23 +75,21 @@ struct LnReaderApp: App {
     private func onLaunch() async {
         #if DEBUG
         await autoImportIfRequested()
+        // A launch that names a book owns the opening move. Without this the restore goes first,
+        // and when the last book was an EPUB it presents that reader — a full-screen cover that
+        // does not swap to another book when `-openTitle` asks for one, so the hook silently
+        // acts on whichever book was already open.
+        if ProcessInfo.processInfo.arguments.contains("-openTitle") {
+            container.lastBookRestoreHandled = true
+        }
         #endif
         await restoreLastBook()
         #if DEBUG
-        // Dev hooks for scripted smoke tests.
+        // Dev hooks for scripted smoke tests, in the order Android's DebugLaunch applies them:
+        // preferences, then the book, then the screen. The screen hooks have to come last —
+        // `-openTitle` selects the player tab itself, so anything that picks a screen before it
+        // is quietly undone, which is how `-showImages` used to end up on the player.
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("-armChapterTimer") {
-            sleepTimer.start(SleepTimerConfig(mode: .chapters(count: 1), fadeOutSeconds: 10))
-            navigation.selectedTab = .settings
-        }
-        if let index = arguments.firstIndex(of: "-armTimer"), index + 1 < arguments.count,
-           let minutes = Int(arguments[index + 1]) {
-            sleepTimer.start(SleepTimerConfig(mode: .time(minutes: minutes), fadeOutSeconds: 10))
-            navigation.selectedTab = .settings
-        }
-        if arguments.contains("-showImages") {
-            navigation.selectedTab = .images
-        }
         if let index = arguments.firstIndex(of: "-textZoom"), index + 1 < arguments.count,
            let zoom = Int(arguments[index + 1]) {
             UserDefaults.standard.set(zoom, forKey: "reader.textZoom")
@@ -129,6 +127,18 @@ struct LnReaderApp: App {
         }
         if arguments.contains("-showReader"), let bookId = engine.book?.id {
             navigation.showReader(bookId: bookId)
+        }
+        if arguments.contains("-showImages") {
+            navigation.selectedTab = .images
+        }
+        if arguments.contains("-armChapterTimer") {
+            sleepTimer.start(SleepTimerConfig(mode: .chapters(count: 1), fadeOutSeconds: 10))
+            navigation.selectedTab = .settings
+        }
+        if let index = arguments.firstIndex(of: "-armTimer"), index + 1 < arguments.count,
+           let minutes = Int(arguments[index + 1]) {
+            sleepTimer.start(SleepTimerConfig(mode: .time(minutes: minutes), fadeOutSeconds: 10))
+            navigation.selectedTab = .settings
         }
         if let index = arguments.firstIndex(of: "-tab"), index + 1 < arguments.count {
             switch arguments[index + 1] {
@@ -243,7 +253,7 @@ struct LnReaderApp: App {
             print("seedStats: no books in the library, nothing to attribute to")
             return
         }
-        var calendar = Calendar.current
+        let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         var sessions: [ReadLogEntry] = []
 
@@ -253,7 +263,7 @@ struct LnReaderApp: App {
             // Most days have some listening; a third are quiet, which gives the chart gaps.
             let roll = rng.next(upTo: 100)
             let count = roll <= 32 ? 0 : (roll <= 70 ? 1 : (roll <= 92 ? 2 : 3))
-            var hours = [8, 12, 18, 21]
+            let hours = [8, 12, 18, 21]
             for i in 0..<count {
                 // Books early in the library get picked more often, so totals differ visibly.
                 let weighted = rng.next(upTo: library.count * (library.count + 1) / 2)

@@ -1,5 +1,71 @@
 # Changelog
 
+## v1.1.0 — 2026-09-20
+
+Books that are only an EPUB, a usage chart showing where your time goes, a
+Settings tab in place of the Timer tab, a sleep timer you can change while it
+runs, and the new shared look.
+
+### App Store release notes (≤ 4000 chars)
+
+```
+• Books without audio: import a plain EPUB — no narration required. A page mark keeps your place, and the library shows the page you're on instead of a running time.
+• Time spent: a chart of how long each book has been open, by day, week, month or year. One shade per book, stacked, with the individual sessions behind Details.
+• The Timer tab is now Settings, holding both the chart and the sleep timer.
+• Change a running sleep timer instead of cancelling it — pick new values and tap Update.
+• A new icon and colours, shared with the Android app.
+• iPad: the library now shows four large covers per row instead of six thin ones.
+
+Everything stays on your device: no accounts, no tracking, no servers.
+```
+
+### Books without audio
+- **EPUB-only imports** — a book no longer needs an `.m4b`. Import a plain
+  `.epub` and it lands in the library like any other book, opening straight
+  into the reader.
+- A **page mark** records the page and scroll position, so the book reopens
+  exactly where you left it. These books have no listening position to fall
+  back on, so this is what carries your place.
+- The library tile shows **`page / total`** rather than a duration.
+- The **mini-player stays hidden** while you read one of these, and returns
+  only when audio is actually playing.
+
+### Time spent
+- A **Time spent** section charts how long each book has been open — listening
+  and reading together — across the last **days, weeks, months or years**.
+- Bars are **stacked, one shade per book**, with a legend totalling each book
+  for the range.
+- **Details** opens the individual sessions, newest first, loading a page at a
+  time as you scroll rather than reading the whole history up front.
+- Sessions are recorded on device in a new usage log. Nothing leaves it.
+
+### Settings
+- **The Timer tab is now a Settings tab**, carrying the usage chart and the
+  sleep timer. Android made the same move, so the two apps have the same four
+  tabs again.
+
+### Sleep timer
+- **A running timer can be changed, not just cancelled.** The setup controls
+  stay on screen while it runs and start from what is actually armed; pick new
+  values and tap **Update timer** to replace it. The countdown and the expiry
+  prompt sit above them as their own sections instead of replacing them, which
+  is how the Android chips have always behaved.
+- The floating mini-player **no longer covers the Update button** — every
+  screen that shows it now reserves the space underneath.
+
+### Player
+- The chapter selector gained the **▼** affordance the Android player has, so
+  it reads as something you can tap rather than a label.
+
+### iPad
+- The library shows **four large covers per row** instead of six thin ones. An
+  adaptive grid fits as many columns as its minimum allows, and the minimum
+  that suits a phone left an iPad using about a third of its width.
+
+### Polish
+- The palette is the **Athenaeum** scheme from `visual-design.md` — the same
+  greens the Android app and the website use — with a new app icon to match.
+
 ## v1.0.0 — 2026-08-31
 
 Initial App Store release — the full ln-reader experience, ported natively to
